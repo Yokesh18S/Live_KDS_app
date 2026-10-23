@@ -1,0 +1,14 @@
+{"_e":"root:init","_t":1792756249684,"format":"v0-jsonl","version":"57.0.32"}
+{"_e":"env:mode","_t":1792756249684,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1792756249688,"mode":"development","files":["../..\\..\\.env"],"env":{"VITE_API_URL":"http://localhost:8001","VITE_AUTO_ACCEPT":"false","VITE_RESTAURANT_NAME":"Data Udipi Kitchen"}}
+{"_e":"devserver:start","_t":1792756254899,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1792756255220,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1792756256575,"plugins":[]}
+{"_e":"metro:instantiate","_t":1792756260093,"atlas":false,"workers":6,"host":"::","port":8082}
+{"_e":"root:init","_t":1792756591963,"format":"v0-jsonl","version":"57.0.32"}
+{"_e":"env:mode","_t":1792756591964,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1792756591970,"mode":"development","files":["../..\\..\\.env"],"env":{"VITE_API_URL":"http://localhost:8001","VITE_AUTO_ACCEPT":"false","VITE_RESTAURANT_NAME":"Data Udipi Kitchen"}}
+{"_e":"devserver:start","_t":1792756596581,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1792756597124,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1792756597419,"plugins":[]}
+{"_e":"metro:instantiate","_t":1792756599817,"atlas":false,"workers":6,"host":"::","port":8082}
