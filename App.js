@@ -6,20 +6,24 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Vibration, 
-  Dimensions, 
-  SafeAreaView 
+  Dimensions 
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from './src/constants/theme';
-import { kdsApi } from './src/services/api';
+import { kdsApi, getAuthToken, setAuthToken } from './src/services/api';
+import { getAuthSession, clearAuthSession } from './src/services/storage';
 import { KDSHeader } from './src/components/KDSHeader';
 import { NewOrderAlertBanner } from './src/components/NewOrderAlertBanner';
 import { KDSTicketCard } from './src/components/KDSTicketCard';
 import { ServerConfigModal } from './src/components/ServerConfigModal';
 import { RecallModal } from './src/components/RecallModal';
+import { KDSLoginScreen } from './src/components/KDSLoginScreen';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [orders, setOrders] = useState([]);
   const [completedOrders, setCompletedOrders] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -32,6 +36,23 @@ export default function App() {
   const knownOrderIdsRef = useRef(new Set());
   const initialLoadRef = useRef(true);
 
+  // Restore saved auth session on boot
+  useEffect(() => {
+    async function restoreSession() {
+      try {
+        const saved = await getAuthSession();
+        if (saved?.token) {
+          setAuthToken(saved.token);
+          setCurrentUser(saved.user);
+        }
+      } catch (e) {
+      } finally {
+        setIsAuthChecking(false);
+      }
+    }
+    restoreSession();
+  }, []);
+
   // Monitor screen orientation / width for tablets
   useEffect(() => {
     const sub = Dimensions.addEventListener('change', ({ window }) => {
@@ -42,8 +63,12 @@ export default function App() {
 
   const isTablet = windowWidth >= 768;
 
-  // Fetch Live Orders from FastAPI Backend
+  // Fetch Live Orders from FastAPI Backend (only if authenticated)
   const fetchOrders = useCallback(async (isSilent = false) => {
+    if (!getAuthToken()) {
+      return; // Do not spam requests if not logged in
+    }
+
     if (!isSilent) setIsRefreshing(true);
     try {
       const data = await kdsApi.getLiveOrders();
@@ -84,12 +109,14 @@ export default function App() {
 
   // Polling loop (every 5 seconds)
   useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(() => {
-      fetchOrders(true);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [fetchOrders]);
+    if (currentUser) {
+      fetchOrders();
+      const interval = setInterval(() => {
+        fetchOrders(true);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser, fetchOrders]);
 
   const stopSiren = () => {
     setIsRinging(false);
@@ -97,7 +124,6 @@ export default function App() {
   };
 
   const handleUpdateStatus = async (orderId, newStatus) => {
-    // Optimistic UI update
     setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: newStatus } : o));
     try {
       await kdsApi.updateOrderStatus(orderId, newStatus);
@@ -121,6 +147,13 @@ export default function App() {
     setIsRecallModalOpen(false);
   };
 
+  const handleLogout = async () => {
+    await clearAuthSession();
+    setAuthToken(null);
+    setCurrentUser(null);
+    setOrders([]);
+  };
+
   const pending = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
   const preparing = orders.filter(o => (o.status || '').toUpperCase() === 'PREPARING');
   const ready = orders.filter(o => (o.status || '').toUpperCase() === 'READY');
@@ -137,131 +170,146 @@ export default function App() {
   const displayOrders = getFilteredList();
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" backgroundColor={COLORS.bgSecondary} />
-      
-      {/* Top Header */}
-      <KDSHeader 
-        onRefresh={() => fetchOrders(false)}
-        isRefreshing={isRefreshing}
-        isRinging={isRinging}
-        onStopSiren={stopSiren}
-        onOpenServerConfig={() => setIsServerModalOpen(true)}
-        onOpenRecall={() => setIsRecallModalOpen(true)}
-        completedCount={completedOrders.length}
-      />
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="light" backgroundColor={COLORS.bgSecondary} />
+        
+        {/* If staff is not logged in, show Kitchen Sign In Screen */}
+        {!currentUser ? (
+          <KDSLoginScreen 
+            onLoginSuccess={(u) => {
+              setCurrentUser(u);
+              fetchOrders(false);
+            }}
+            onOpenServerConfig={() => setIsServerModalOpen(true)}
+          />
+        ) : (
+          <View style={{ flex: 1 }}>
+            {/* Top Header */}
+            <KDSHeader 
+              onRefresh={() => fetchOrders(false)}
+              isRefreshing={isRefreshing}
+              isRinging={isRinging}
+              onStopSiren={stopSiren}
+              onOpenServerConfig={() => setIsServerModalOpen(true)}
+              onOpenRecall={() => setIsRecallModalOpen(true)}
+              completedCount={completedOrders.length}
+            />
 
-      {/* Swiggy / Zomato Flashing New Order Banner */}
-      <NewOrderAlertBanner 
-        newOrders={pending}
-        onAcceptAll={handleAcceptAllPending}
-        onMute={stopSiren}
-      />
+            {/* Swiggy / Zomato Flashing New Order Banner */}
+            <NewOrderAlertBanner 
+              newOrders={pending}
+              onAcceptAll={handleAcceptAllPending}
+              onMute={stopSiren}
+            />
 
-      {/* Tablet Multi-Column Layout */}
-      {isTablet ? (
-        <View style={styles.tabletColumns}>
-          {/* Column 1: New Orders */}
-          <View style={[styles.column, { borderTopColor: COLORS.pending }]}>
-            <View style={styles.columnHeader}>
-              <Text style={[styles.columnTitle, { color: COLORS.pending }]}>New Orders</Text>
-              <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{pending.length}</Text></View>
-            </View>
-            <ScrollView style={styles.columnScroll}>
-              {pending.map(o => (
-                <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-              ))}
-            </ScrollView>
-          </View>
+            {/* Tablet Multi-Column Layout */}
+            {isTablet ? (
+              <View style={styles.tabletColumns}>
+                {/* Column 1: New Orders */}
+                <View style={[styles.column, { borderTopColor: COLORS.pending }]}>
+                  <View style={styles.columnHeader}>
+                    <Text style={[styles.columnTitle, { color: COLORS.pending }]}>New Orders</Text>
+                    <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{pending.length}</Text></View>
+                  </View>
+                  <ScrollView style={styles.columnScroll}>
+                    {pending.map(o => (
+                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
+                    ))}
+                  </ScrollView>
+                </View>
 
-          {/* Column 2: In Kitchen */}
-          <View style={[styles.column, { borderTopColor: COLORS.prep }]}>
-            <View style={styles.columnHeader}>
-              <Text style={[styles.columnTitle, { color: COLORS.prep }]}>Cooking / In Kitchen</Text>
-              <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{preparing.length}</Text></View>
-            </View>
-            <ScrollView style={styles.columnScroll}>
-              {preparing.map(o => (
-                <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-              ))}
-            </ScrollView>
-          </View>
+                {/* Column 2: In Kitchen */}
+                <View style={[styles.column, { borderTopColor: COLORS.prep }]}>
+                  <View style={styles.columnHeader}>
+                    <Text style={[styles.columnTitle, { color: COLORS.prep }]}>Cooking / In Kitchen</Text>
+                    <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{preparing.length}</Text></View>
+                  </View>
+                  <ScrollView style={styles.columnScroll}>
+                    {preparing.map(o => (
+                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
+                    ))}
+                  </ScrollView>
+                </View>
 
-          {/* Column 3: Ready */}
-          <View style={[styles.column, { borderTopColor: COLORS.ready }]}>
-            <View style={styles.columnHeader}>
-              <Text style={[styles.columnTitle, { color: COLORS.ready }]}>Ready to Serve</Text>
-              <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{ready.length}</Text></View>
-            </View>
-            <ScrollView style={styles.columnScroll}>
-              {ready.map(o => (
-                <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      ) : (
-        /* Mobile Phone Layout with Segmented Top Bar */
-        <View style={{ flex: 1 }}>
-          <View style={styles.tabBar}>
-            <TouchableOpacity 
-              style={[styles.tabItem, activeTab === 'PENDING' && { backgroundColor: COLORS.pending }]}
-              onPress={() => setActiveTab('PENDING')}
-            >
-              <Text style={[styles.tabText, activeTab === 'PENDING' && styles.tabTextActive]}>
-                New ({pending.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.tabItem, activeTab === 'PREPARING' && { backgroundColor: COLORS.prep }]}
-              onPress={() => setActiveTab('PREPARING')}
-            >
-              <Text style={[styles.tabText, activeTab === 'PREPARING' && { color: '#000', fontWeight: '800' }]}>
-                Cooking ({preparing.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.tabItem, activeTab === 'READY' && { backgroundColor: COLORS.ready }]}
-              onPress={() => setActiveTab('READY')}
-            >
-              <Text style={[styles.tabText, activeTab === 'READY' && styles.tabTextActive]}>
-                Ready ({ready.length})
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.mobileList} contentContainerStyle={{ padding: 12 }}>
-            {displayOrders.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="restaurant-outline" size={38} color={COLORS.textMuted} />
-                <Text style={styles.emptyText}>No orders in this stage.</Text>
+                {/* Column 3: Ready */}
+                <View style={[styles.column, { borderTopColor: COLORS.ready }]}>
+                  <View style={styles.columnHeader}>
+                    <Text style={[styles.columnTitle, { color: COLORS.ready }]}>Ready to Serve</Text>
+                    <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{ready.length}</Text></View>
+                  </View>
+                  <ScrollView style={styles.columnScroll}>
+                    {ready.map(o => (
+                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
+                    ))}
+                  </ScrollView>
+                </View>
               </View>
             ) : (
-              displayOrders.map(o => (
-                <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-              ))
+              /* Mobile Phone Layout with Segmented Top Bar */
+              <View style={{ flex: 1 }}>
+                <View style={styles.tabBar}>
+                  <TouchableOpacity 
+                    style={[styles.tabItem, activeTab === 'PENDING' && { backgroundColor: COLORS.pending }]}
+                    onPress={() => setActiveTab('PENDING')}
+                  >
+                    <Text style={[styles.tabText, activeTab === 'PENDING' && styles.tabTextActive]}>
+                      New ({pending.length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.tabItem, activeTab === 'PREPARING' && { backgroundColor: COLORS.prep }]}
+                    onPress={() => setActiveTab('PREPARING')}
+                  >
+                    <Text style={[styles.tabText, activeTab === 'PREPARING' && { color: '#000', fontWeight: '800' }]}>
+                      Cooking ({preparing.length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.tabItem, activeTab === 'READY' && { backgroundColor: COLORS.ready }]}
+                    onPress={() => setActiveTab('READY')}
+                  >
+                    <Text style={[styles.tabText, activeTab === 'READY' && styles.tabTextActive]}>
+                      Ready ({ready.length})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.mobileList} contentContainerStyle={{ padding: 12 }}>
+                  {displayOrders.length === 0 ? (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="restaurant-outline" size={38} color={COLORS.textMuted} />
+                      <Text style={styles.emptyText}>No orders in this stage.</Text>
+                    </View>
+                  ) : (
+                    displayOrders.map(o => (
+                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
+                    ))
+                  )}
+                </ScrollView>
+              </View>
             )}
-          </ScrollView>
-        </View>
-      )}
+          </View>
+        )}
 
-      {/* Server Config Modal */}
-      <ServerConfigModal 
-        visible={isServerModalOpen} 
-        onClose={() => setIsServerModalOpen(false)}
-        onSaved={() => fetchOrders(false)}
-      />
+        {/* Server Config Modal */}
+        <ServerConfigModal 
+          visible={isServerModalOpen} 
+          onClose={() => setIsServerModalOpen(false)}
+          onSaved={() => fetchOrders(false)}
+        />
 
-      {/* Recall / Bumped Orders Modal */}
-      <RecallModal 
-        visible={isRecallModalOpen}
-        onClose={() => setIsRecallModalOpen(false)}
-        completedOrders={completedOrders}
-        onRecall={handleRecallOrder}
-      />
-    </SafeAreaView>
+        {/* Recall / Bumped Orders Modal */}
+        <RecallModal 
+          visible={isRecallModalOpen}
+          onClose={() => setIsRecallModalOpen(false)}
+          completedOrders={completedOrders}
+          onRecall={handleRecallOrder}
+        />
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
