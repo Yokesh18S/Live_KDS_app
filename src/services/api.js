@@ -1,69 +1,80 @@
-import axios from 'axios';
+export const BACKEND_ENDPOINTS = [
+  { label: 'Cloud Dev API (Default)', url: 'http://dev-api.dataudipi.com' },
+  { label: 'Local LAN (10.127.18.176:8001)', url: 'http://10.127.18.176:8001' },
+  { label: 'Localhost (Port 8001)', url: 'http://localhost:8001' },
+  { label: 'Android Emulator (10.0.2.2:8001)', url: 'http://10.0.2.2:8001' },
+];
 
-// Empty string = same origin (proxied by Vite during dev, and nginx in prod)
-const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+let activeBaseUrl = 'http://dev-api.dataudipi.com';
+let activeRestaurantId = 1;
+let authToken = null;
 
-export const api = axios.create({
-  baseURL: API_BASE_URL,
-  withCredentials: true,
-  headers: {
+export const getActiveBaseUrl = () => activeBaseUrl;
+export const setActiveBaseUrl = (url) => {
+  activeBaseUrl = url.replace(/\/$/, '');
+};
+
+export const getActiveRestaurantId = () => activeRestaurantId;
+export const setActiveRestaurantId = (id) => {
+  activeRestaurantId = id;
+};
+
+export const setAuthToken = (token) => { authToken = token; };
+export const getAuthToken = () => authToken;
+
+async function request(path, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const url = `${activeBaseUrl}${path}`;
+  const headers = {
+    'Accept': 'application/json',
     'Content-Type': 'application/json',
-  },
-  timeout: 15000,
-});
+    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+    ...(options.headers || {}),
+  };
 
-// Request interceptor: inject access token and restaurant filter
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('kds_access_token') || localStorage.getItem('access_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
-  const restaurantId = localStorage.getItem('kds_restaurant_id') || localStorage.getItem('admin_selected_restaurant');
-  if (restaurantId) {
-    if (config.method === 'get' || config.method === 'delete') {
-      config.params = { ...config.params, restaurant_id: restaurantId };
-    } else if (config.method === 'post' || config.method === 'patch' || config.method === 'put') {
-      if (config.data && typeof config.data === 'object' && !(config.data instanceof FormData)) {
-        config.data.restaurant_id = parseInt(restaurantId, 10);
-      }
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.detail || `HTTP ${res.status}`);
     }
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
   }
+}
 
-  return config;
-});
-
-export const kdsService = {
-  // Fetch live active orders (pending, preparing, ready)
-  getLiveOrders: async (params = {}) => {
-    const response = await api.get('/api/v1/orders/live', { params });
-    return response.data || [];
+export const kdsApi = {
+  getLiveOrders: async () => {
+    return await request(`/api/v1/orders/live?restaurant_id=${activeRestaurantId}`);
   },
 
-  // Update overall order status (e.g. PENDING -> PREPARING -> READY -> SERVED)
   updateOrderStatus: async (orderId, status) => {
-    const response = await api.patch(`/api/v1/orders/${orderId}/status`, { status });
-    return response.data;
+    return await request(`/api/v1/orders/${orderId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
   },
 
-  // Staff login (Hotel Admin, Super Admin, Cashier, Kitchen)
-  login: async (email, password, role = undefined) => {
-    const response = await api.post('/api/v1/auth/login', { email, password, role });
-    if (response.data?.access_token) {
-      localStorage.setItem('kds_access_token', response.data.access_token);
-      if (response.data.user) {
-        localStorage.setItem('kds_user', JSON.stringify(response.data.user));
-        if (response.data.user.restaurant_id) {
-          localStorage.setItem('kds_restaurant_id', response.data.user.restaurant_id.toString());
-        }
+  login: async (email, password, role = 'HOTEL_ADMIN') => {
+    const data = await request('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, role }),
+    });
+    if (data?.access_token) {
+      authToken = data.access_token;
+      if (data.user?.restaurant_id) {
+        activeRestaurantId = data.user.restaurant_id;
       }
     }
-    return response.data;
-  },
-
-  // Get current logged-in user profile
-  getProfile: async () => {
-    const response = await api.get('/api/v1/auth/me');
-    return response.data;
+    return data;
   },
 };

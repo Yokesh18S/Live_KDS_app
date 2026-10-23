@@ -1,7 +1,3 @@
-/**
- * Time, Badge, and Calculation Formatters for KDS Tickets
- */
-
 export function formatKitchenTimer(dateString) {
   if (!dateString) return { elapsedStr: '00:00', minutes: 0, seconds: 0, urgency: 'fresh' };
 
@@ -25,14 +21,14 @@ export function formatKitchenTimer(dateString) {
   const ss = String(seconds).padStart(2, '0');
   const elapsedStr = `${mm}:${ss}`;
 
-  let urgency = 'fresh'; // < 10 mins (Green)
+  let urgency = 'fresh';
   if (minutes >= 20) {
-    urgency = 'critical'; // > 20 mins (Flashing Red)
+    urgency = 'critical';
   } else if (minutes >= 10) {
-    urgency = 'warning'; // 10-20 mins (Amber)
+    urgency = 'warning';
   }
 
-  return { elapsedStr, minutes, seconds, totalSeconds, urgency };
+  return { elapsedStr, minutes, seconds, urgency };
 }
 
 export function formatTime(dateString) {
@@ -58,9 +54,8 @@ export function getOrderTypeDetails(order) {
     return {
       type: 'DELIVERY',
       label: 'Delivery 🛵',
-      tableDisplay: 'Delivery',
-      badgeClass: 'badge-delivery',
-      color: '#3b82f6',
+      color: '#3B82F6',
+      bg: 'rgba(59, 130, 246, 0.15)',
     };
   }
 
@@ -68,20 +63,17 @@ export function getOrderTypeDetails(order) {
     return {
       type: 'TAKEAWAY',
       label: 'Takeaway 🛍️',
-      tableDisplay: 'Takeaway',
-      badgeClass: 'badge-takeaway',
-      color: '#8b5cf6',
+      color: '#8B5CF6',
+      bg: 'rgba(139, 92, 246, 0.15)',
     };
   }
 
-  // Dine-In
   const cleanTable = table ? (table.startsWith('T-') ? table : `Table ${table}`) : 'Table -';
   return {
     type: 'DINE_IN',
     label: cleanTable,
-    tableDisplay: cleanTable,
-    badgeClass: 'badge-dinein',
-    color: '#fc8019',
+    color: '#FC8019',
+    bg: 'rgba(252, 128, 25, 0.15)',
   };
 }
 

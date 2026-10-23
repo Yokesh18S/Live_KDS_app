@@ -1,22 +1,28 @@
 {
-  "name": "live-kds-app",
+  "name": "live-kds-kitchen",
   "version": "1.0.0",
-  "private": true,
-  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "lint": "expo lint"
   },
   "dependencies": {
-    "axios": "^1.6.0",
+    "@expo/vector-icons": "^15.0.2",
     "data-udipi-frontend": "file:../Food_Ordering_App_Frontend",
-    "lucide-react": "^0.292.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "expo": "~57.0.30",
+    "expo-font": "~57.0.4",
+    "expo-secure-store": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.2.0",
-    "vite": "^5.0.0"
-  }
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2"
+  },
+  "private": true
 }
