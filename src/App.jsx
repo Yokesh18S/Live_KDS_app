@@ -35,6 +35,8 @@ export function App() {
   const [audioState, setAudioState] = useState({ isUnlocked: false, isRinging: false, isMuted: false });
   const knownOrderIdsRef = useRef(new Set());
   const initialLoadRef = useRef(true);
+  const optimisticStatusRef = useRef(new Map());
+  const inFlightStatusUpdatesRef = useRef(new Set());
 
   // Restore session & selected restaurant
   useEffect(() => {
@@ -108,7 +110,28 @@ export function App() {
         });
       }
 
-      setOrders(liveList);
+      const now = Date.now();
+      const mergedList = liveList.map(o => {
+        const idKey = String(o.order_id);
+        const opt = optimisticStatusRef.current.get(idKey);
+        if (opt) {
+          const serverStatus = (o.status || '').toUpperCase();
+          const targetStatus = (opt.status || '').toUpperCase();
+
+          if (serverStatus === targetStatus) {
+            optimisticStatusRef.current.delete(idKey);
+            return o;
+          }
+          if (now > opt.expiresAt) {
+            optimisticStatusRef.current.delete(idKey);
+            return o;
+          }
+          return { ...o, status: opt.status };
+        }
+        return o;
+      });
+
+      setOrders(mergedList);
     } catch (err) {
       console.warn('Orders fetch error:', err);
     } finally {
@@ -128,13 +151,27 @@ export function App() {
   }, [selectedRestaurant, fetchLiveOrders]);
 
   const handleUpdateStatus = async (orderId, newStatus) => {
-    setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: newStatus } : o));
+    const idKey = String(orderId);
+    const upperStatus = (newStatus || '').toUpperCase();
+
+    if (inFlightStatusUpdatesRef.current.has(idKey)) return;
+    inFlightStatusUpdatesRef.current.add(idKey);
+
+    optimisticStatusRef.current.set(idKey, {
+      status: upperStatus,
+      expiresAt: Date.now() + 45000,
+    });
+
+    setOrders(prev => prev.map(o => String(o.order_id) === idKey ? { ...o, status: upperStatus } : o));
+
     try {
-      await kdsService.updateOrderStatus(orderId, newStatus);
-      fetchLiveOrders(true);
+      await kdsService.updateOrderStatus(orderId, upperStatus);
     } catch (err) {
       console.error('Update status failed:', err);
+      optimisticStatusRef.current.delete(idKey);
       fetchLiveOrders(true);
+    } finally {
+      inFlightStatusUpdatesRef.current.delete(idKey);
     }
   };
 

@@ -51,6 +51,7 @@ export default function App() {
   // Optimistic Status Lock Map (orderId -> { status, expiresAt })
   // Prevents background polling race condition from reverting button state!
   const optimisticStatusRef = useRef(new Map());
+  const inFlightStatusUpdatesRef = useRef(new Set());
 
   // Initialize native audio mode on boot
   useEffect(() => {
@@ -103,15 +104,27 @@ export default function App() {
       const list = Array.isArray(data) ? data : [];
       const now = Date.now();
 
-      // Merge with active optimistic overrides so background poll NEVER reverts button state!
+      // Merge with active optimistic overrides so background poll NEVER reverts button state or causes bounce back!
       const mergedList = list.map(o => {
-        const opt = optimisticStatusRef.current.get(o.order_id);
+        const idKey = String(o.order_id);
+        const opt = optimisticStatusRef.current.get(idKey);
         if (opt) {
-          if (now > opt.expiresAt || o.status === opt.status) {
-            optimisticStatusRef.current.delete(o.order_id);
+          const serverStatus = (o.status || '').toUpperCase();
+          const targetStatus = (opt.status || '').toUpperCase();
+
+          if (serverStatus === targetStatus) {
+            // Server has officially confirmed the target status! Release the lock.
+            optimisticStatusRef.current.delete(idKey);
             return o;
           }
-          // Preserve optimistic status! Backend hasn't caught up yet!
+
+          if (now > opt.expiresAt) {
+            // Safety timeout reached after 45s
+            optimisticStatusRef.current.delete(idKey);
+            return o;
+          }
+
+          // Backend hasn't updated its snapshot yet - ENFORCE the target status so the card never bounces back!
           return { ...o, status: opt.status };
         }
         return o;
@@ -168,33 +181,42 @@ export default function App() {
     }
   };
 
-  // Instant Single-Touch Status Update with Lock
+  // Instant Single-Touch Status Update with Zero-Bounce Persistent Lock
   // PENDING -> PREPARING (stays in NEW tab instantly)
-  // PREPARING -> READY (moves to HISTORY tab instantly)
+  // PREPARING -> READY (moves to HISTORY tab in 0ms with zero bounce back!)
   const handleUpdateStatus = useCallback(async (orderId, newStatus) => {
-    // 1. Instantly record optimistic lock for 15s to prevent polling race condition
-    optimisticStatusRef.current.set(orderId, {
-      status: newStatus,
-      expiresAt: Date.now() + 15000,
+    const idKey = String(orderId);
+    const upperStatus = (newStatus || '').toUpperCase();
+
+    // Prevent duplicate triggers while in-flight
+    if (inFlightStatusUpdatesRef.current.has(idKey)) return;
+    inFlightStatusUpdatesRef.current.add(idKey);
+
+    // 1. Instantly record persistent optimistic lock for 45 seconds.
+    // It will NEVER be deleted prematurely by a setTimeout, preventing any bounce back!
+    optimisticStatusRef.current.set(idKey, {
+      status: upperStatus,
+      expiresAt: Date.now() + 45000,
     });
 
-    // 2. Immediately update state in 0ms without waiting for network
-    setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: newStatus } : o));
+    // 2. Immediately update state in 0ms so card instantly moves to History with no latency
+    setOrders(prev => prev.map(o => String(o.order_id) === idKey ? { ...o, status: upperStatus } : o));
 
     // 3. Fire network update in background
     try {
-      await kdsApi.updateOrderStatus(orderId, newStatus);
-      setTimeout(() => {
-        optimisticStatusRef.current.delete(orderId);
-      }, 1000);
+      await kdsApi.updateOrderStatus(orderId, upperStatus);
+      // The lock will be safely released in fetchOrders ONLY when the server confirms the new status!
     } catch (err) {
       console.warn('[Status Update Warning]:', err.message);
-      optimisticStatusRef.current.delete(orderId);
+      // Revert lock only if network genuinely failed
+      optimisticStatusRef.current.delete(idKey);
       fetchOrders(true);
+    } finally {
+      inFlightStatusUpdatesRef.current.delete(idKey);
     }
   }, [fetchOrders]);
 
-  // Accept all pending: updates all PENDING to PREPARING immediately with lock
+  // Accept all pending: updates all PENDING to PREPARING immediately with zero-bounce lock
   const handleAcceptAllPending = async () => {
     stopSiren();
     const pendingList = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
@@ -202,9 +224,10 @@ export default function App() {
 
     const now = Date.now();
     pendingList.forEach(ord => {
-      optimisticStatusRef.current.set(ord.order_id, {
+      const idKey = String(ord.order_id);
+      optimisticStatusRef.current.set(idKey, {
         status: 'PREPARING',
-        expiresAt: now + 15000,
+        expiresAt: now + 45000,
       });
     });
 
