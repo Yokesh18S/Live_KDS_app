@@ -77,7 +77,14 @@ export function getOrderTypeDetails(order) {
   };
 }
 
-export function getCustomerName(order) {
+/**
+ * Customer details resolution:
+ * - If name and phone given: "Name • Phone"
+ * - If only name given: "Name"
+ * - If only phone given: "Phone"
+ * - If neither given: "Guest"
+ */
+export function getCustomerInfo(order) {
   let name = (order.customer_name || '').trim();
   let phone = (order.customer_phone || '').trim();
 
@@ -87,12 +94,24 @@ export function getCustomerName(order) {
       if (addr && (addr.contact_name || addr.name)) {
         name = addr.contact_name || addr.name;
       }
+      if (addr && (addr.contact_phone || addr.phone) && !phone) {
+        phone = addr.contact_phone || addr.phone;
+      }
     } catch (e) {}
   }
 
-  if (!name || name === 'Guest' || name === phone) {
-    if (phone) return `Customer (${phone.slice(-4)})`;
+  // Treat generic names as missing
+  const isGeneric = !name || name.toLowerCase() === 'guest' || name === phone;
+
+  if (!isGeneric && phone) {
+    return `${name} • ${phone}`;
+  } else if (!isGeneric) {
+    return name;
+  } else if (phone) {
+    return phone;
+  } else {
     return 'Guest';
   }
-  return name;
 }
+
+export const getCustomerName = getCustomerInfo;

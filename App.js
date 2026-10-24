@@ -48,6 +48,10 @@ export default function App() {
   const knownOrderIdsRef = useRef(new Set());
   const initialLoadRef = useRef(true);
 
+  // Optimistic Status Lock Map (orderId -> { status, expiresAt })
+  // Prevents background polling race condition from reverting button state!
+  const optimisticStatusRef = useRef(new Map());
+
   // Initialize native audio mode on boot
   useEffect(() => {
     initAudioMode();
@@ -97,9 +101,24 @@ export default function App() {
     try {
       const data = await kdsApi.getLiveOrders(selectedRestaurant.id);
       const list = Array.isArray(data) ? data : [];
+      const now = Date.now();
+
+      // Merge with active optimistic overrides so background poll NEVER reverts button state!
+      const mergedList = list.map(o => {
+        const opt = optimisticStatusRef.current.get(o.order_id);
+        if (opt) {
+          if (now > opt.expiresAt || o.status === opt.status) {
+            optimisticStatusRef.current.delete(o.order_id);
+            return o;
+          }
+          // Preserve optimistic status! Backend hasn't caught up yet!
+          return { ...o, status: opt.status };
+        }
+        return o;
+      });
 
       // Check for newly arrived PENDING orders
-      const newPending = list.filter(o => 
+      const newPending = mergedList.filter(o => 
         (o.status || 'PENDING').toUpperCase() === 'PENDING' &&
         !knownOrderIdsRef.current.has(o.order_id)
       );
@@ -111,10 +130,10 @@ export default function App() {
         playLoudAlarmSound();
       }
 
-      list.forEach(o => knownOrderIdsRef.current.add(o.order_id));
+      mergedList.forEach(o => knownOrderIdsRef.current.add(o.order_id));
       initialLoadRef.current = false;
 
-      setOrders(list);
+      setOrders(mergedList);
     } catch (err) {
       console.warn('[KDS Fetch Orders Error]:', err.message);
     } finally {
@@ -149,27 +168,54 @@ export default function App() {
     }
   };
 
-  // Update Status handler:
-  // PENDING -> PREPARING (stays in NEW tab)
-  // PREPARING -> READY (moves to HISTORY tab)
-  // READY -> PREPARING (recall back to NEW tab)
-  const handleUpdateStatus = async (orderId, newStatus) => {
+  // Instant Single-Touch Status Update with Lock
+  // PENDING -> PREPARING (stays in NEW tab instantly)
+  // PREPARING -> READY (moves to HISTORY tab instantly)
+  const handleUpdateStatus = useCallback(async (orderId, newStatus) => {
+    // 1. Instantly record optimistic lock for 15s to prevent polling race condition
+    optimisticStatusRef.current.set(orderId, {
+      status: newStatus,
+      expiresAt: Date.now() + 15000,
+    });
+
+    // 2. Immediately update state in 0ms without waiting for network
     setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: newStatus } : o));
+
+    // 3. Fire network update in background
     try {
       await kdsApi.updateOrderStatus(orderId, newStatus);
-      fetchOrders(true);
+      setTimeout(() => {
+        optimisticStatusRef.current.delete(orderId);
+      }, 1000);
     } catch (err) {
-      console.warn('Update status error:', err);
+      console.warn('[Status Update Warning]:', err.message);
+      optimisticStatusRef.current.delete(orderId);
       fetchOrders(true);
     }
-  };
+  }, [fetchOrders]);
 
-  // Accept all pending: updates all PENDING to PREPARING (they remain in NEW tab)
+  // Accept all pending: updates all PENDING to PREPARING immediately with lock
   const handleAcceptAllPending = async () => {
     stopSiren();
     const pendingList = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
+    if (pendingList.length === 0) return;
+
+    const now = Date.now();
+    pendingList.forEach(ord => {
+      optimisticStatusRef.current.set(ord.order_id, {
+        status: 'PREPARING',
+        expiresAt: now + 15000,
+      });
+    });
+
+    // 0ms instant UI update
+    setOrders(prev => prev.map(o => (o.status || 'PENDING').toUpperCase() === 'PENDING' ? { ...o, status: 'PREPARING' } : o));
+
+    // Fire calls in background
     for (const ord of pendingList) {
-      handleUpdateStatus(ord.order_id, 'PREPARING');
+      try {
+        await kdsApi.updateOrderStatus(ord.order_id, 'PREPARING');
+      } catch (err) {}
     }
   };
 
@@ -292,6 +338,7 @@ export default function App() {
                 style={[styles.tabItem, activeTab === 'NEW' && styles.tabItemActive]}
                 onPress={() => setActiveTab('NEW')}
                 activeOpacity={0.7}
+                delayPressIn={0}
               >
                 <View style={styles.tabContentRow}>
                   <Text style={[styles.tabLabel, activeTab === 'NEW' && styles.tabLabelActive]}>
@@ -307,6 +354,7 @@ export default function App() {
                 style={[styles.tabItem, activeTab === 'HISTORY' && styles.tabItemActive]}
                 onPress={() => setActiveTab('HISTORY')}
                 activeOpacity={0.7}
+                delayPressIn={0}
               >
                 <View style={styles.tabContentRow}>
                   <Text style={[styles.tabLabel, activeTab === 'HISTORY' && styles.tabLabelActive]}>
@@ -319,8 +367,13 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* Order Cards List */}
-            <ScrollView style={styles.orderScroll} contentContainerStyle={styles.orderScrollContent}>
+            {/* High Performance Smooth Order Cards Scroll */}
+            <ScrollView 
+              style={styles.orderScroll} 
+              contentContainerStyle={styles.orderScrollContent}
+              removeClippedSubviews={true}
+              keyboardShouldPersistTaps="handled"
+            >
               {sortedOrders.map(o => (
                 <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
               ))}

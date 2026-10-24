@@ -1,29 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
-import { formatKitchenTimer, formatTime, getOrderTypeDetails, getCustomerName } from '../utils/formatters';
+import { formatKitchenTimer, formatTime, getOrderTypeDetails, getCustomerInfo } from '../utils/formatters';
 
-export function KDSTicketCard({ order, onUpdateStatus }) {
+export const KDSTicketCard = memo(function KDSTicketCard({ order, onUpdateStatus }) {
   const [timerInfo, setTimerInfo] = useState(() => formatKitchenTimer(order.created_at));
   const [struckMap, setStruckMap] = useState({});
 
+  const orderStatus = (order.status || 'PENDING').toUpperCase();
+  const isLive = orderStatus !== 'SERVED' && orderStatus !== 'READY';
+
+  // Throttle timer updates to every 10 seconds to eliminate 100+ intervals lag
   useEffect(() => {
+    if (!isLive) return;
     const timer = setInterval(() => {
       setTimerInfo(formatKitchenTimer(order.created_at));
-    }, 1000);
+    }, 10000);
     return () => clearInterval(timer);
-  }, [order.created_at]);
+  }, [order.created_at, isLive]);
 
   const toggleStrike = (idx) => {
     setStruckMap(prev => ({ ...prev, [idx]: !prev[idx] }));
   };
 
   const orderType = getOrderTypeDetails(order);
-  const customerName = getCustomerName(order);
-  const orderStatus = (order.status || 'PENDING').toUpperCase();
+  const customerInfo = getCustomerInfo(order);
 
-  const isUrgent = timerInfo.urgency === 'critical' && orderStatus !== 'SERVED' && orderStatus !== 'READY';
+  const isUrgent = timerInfo.urgency === 'critical' && isLive;
 
   const getTimerColors = () => {
     switch (timerInfo.urgency) {
@@ -35,7 +39,7 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
 
   const timerColor = getTimerColors();
 
-  // Display Bill # prominently (without the internal #177... series)
+  // Highlight Bill # prominently (without internal order number)
   const billDisplay = order.bill_no ? `Bill #${order.bill_no}` : `Bill #${order.branch_order_id || order.order_id}`;
 
   return (
@@ -71,14 +75,18 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
         </View>
       </View>
 
-      {/* Meta Row: Table & Waiter / Customer */}
+      {/* Meta Row: Table & Customer Name / Phone Number (or Guest) */}
       <View style={styles.metaRow}>
         <View style={[styles.typeBadge, { backgroundColor: orderType.bg }]}>
           <Text style={[styles.typeText, { color: orderType.color }]}>{orderType.label.toUpperCase()}</Text>
         </View>
-        <Text style={styles.serverText}>
-          {order.placed_by_name ? `Waiter: ${order.placed_by_name}` : customerName}
-        </Text>
+
+        <View style={styles.customerBox}>
+          <Ionicons name="person-circle-outline" size={15} color={COLORS.textSecondary} />
+          <Text style={styles.customerText} numberOfLines={1}>
+            {customerInfo}
+          </Text>
+        </View>
       </View>
 
       {/* Items List with Extra Bold Font & Tap-to-Strike */}
@@ -91,6 +99,7 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
               style={[styles.itemRow, isStruck && styles.itemStruck]} 
               onPress={() => toggleStrike(idx)}
               activeOpacity={0.7}
+              delayPressIn={0}
             >
               <View style={styles.itemLeft}>
                 <View style={[styles.checkbox, isStruck && styles.checkboxActive]}>
@@ -116,26 +125,28 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
         </View>
       ) : null}
 
-      {/* Action Progression Button (Bolder & Taller) */}
+      {/* Single-Touch Instant Action Button */}
       <View style={styles.actionRow}>
-        {/* Step 1: PENDING -> Click to Start Prep (Stays in New tab) */}
+        {/* Step 1: PENDING -> Click to Start Prep (Instantly updates to PREPARING and stays) */}
         {orderStatus === 'PENDING' && (
           <TouchableOpacity 
             style={[styles.actionBtn, { backgroundColor: COLORS.brand }]}
             onPress={() => onUpdateStatus(order.order_id, 'PREPARING')}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
+            delayPressIn={0}
           >
             <Text style={styles.actionBtnText}>Accept & Start Prep</Text>
             <Ionicons name="chevron-forward" size={18} color="#FFF" />
           </TouchableOpacity>
         )}
 
-        {/* Step 2: PREPARING -> Click Mark Ready (Moves to History tab) */}
+        {/* Step 2: PREPARING -> Click Mark Ready (Instantly updates to READY and moves to History) */}
         {orderStatus === 'PREPARING' && (
           <TouchableOpacity 
             style={[styles.actionBtn, { backgroundColor: COLORS.ready }]}
             onPress={() => onUpdateStatus(order.order_id, 'READY')}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
+            delayPressIn={0}
           >
             <Ionicons name="checkmark-circle-outline" size={20} color="#FFF" style={{ marginRight: 6 }} />
             <Text style={styles.actionBtnText}>Mark Ready ✓</Text>
@@ -155,7 +166,8 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
             <TouchableOpacity 
               style={styles.recallBtn}
               onPress={() => onUpdateStatus(order.order_id, 'PREPARING')}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
+              delayPressIn={0}
             >
               <Ionicons name="arrow-undo-outline" size={15} color={COLORS.blue} style={{ marginRight: 4 }} />
               <Text style={styles.recallBtnText}>Recall to Kitchen</Text>
@@ -165,7 +177,7 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -266,6 +278,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.borderSubtle,
     paddingVertical: 10,
     marginTop: 8,
+    gap: 8,
   },
   typeBadge: {
     paddingHorizontal: 10,
@@ -277,10 +290,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  serverText: {
+  customerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  customerText: {
     fontSize: 13,
     fontWeight: '800',
-    color: COLORS.textSecondary,
+    color: COLORS.textPrimary,
   },
   itemsList: {
     marginVertical: 12,
