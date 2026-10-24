@@ -8,24 +8,24 @@ import {
   ActivityIndicator, 
   KeyboardAvoidingView, 
   Platform,
-  Alert
+  ScrollView
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { kdsApi } from '../services/api';
 import { saveAuthSession } from '../services/storage';
 
 export function KDSLoginScreen({ onLoginSuccess, onOpenServerConfig }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('HOTEL_ADMIN');
+  // Pre-filled with Super Admin credentials
+  const [email, setEmail] = useState('admin@foodapp.com');
+  const [password, setPassword] = useState('admin123');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      setErrorMsg('Please enter both email and password.');
+      setErrorMsg('Please enter both admin email and password.');
       return;
     }
 
@@ -33,16 +33,18 @@ export function KDSLoginScreen({ onLoginSuccess, onOpenServerConfig }) {
     setErrorMsg('');
 
     try {
-      const data = await kdsApi.login(email.trim(), password.trim(), role);
+      // Super Admin credentials login
+      const data = await kdsApi.login(email.trim(), password.trim(), 'SUPER_ADMIN');
       if (data?.access_token) {
-        await saveAuthSession(data.access_token, data.user || { email, role });
-        onLoginSuccess(data.user || { email, role });
+        const adminUser = data.user || { email, role: 'SUPER_ADMIN', name: 'Super Admin' };
+        await saveAuthSession(data.access_token, adminUser);
+        onLoginSuccess(adminUser);
       } else {
         setErrorMsg('Login succeeded but no token was returned.');
       }
     } catch (err) {
-      console.warn('[KDS Login] Error:', err.message);
-      setErrorMsg(err.message || 'Invalid credentials or server unreachable.');
+      console.warn('[Admin Login] Error:', err.message);
+      setErrorMsg(err.message || 'Invalid admin credentials or server unreachable.');
     } finally {
       setLoading(false);
     }
@@ -53,105 +55,108 @@ export function KDSLoginScreen({ onLoginSuccess, onOpenServerConfig }) {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.card}>
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <View style={styles.iconBox}>
-            <MaterialCommunityIcons name="chef-hat" size={32} color="#FFF" />
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.card}>
+          {/* Brand Header */}
+          <View style={styles.header}>
+            <View style={styles.iconBox}>
+              <MaterialCommunityIcons name="shield-crown" size={34} color="#FFF" />
+            </View>
+            <Text style={styles.title}>Super Admin Portal</Text>
+            <Text style={styles.subtitle}>Central KDS & KOT Kitchen Monitor</Text>
+            <View style={styles.badgeRow}>
+              <View style={styles.adminBadge}>
+                <Ionicons name="key" size={12} color={COLORS.brand} />
+                <Text style={styles.adminBadgeText}>SUPER ADMIN CREDENTIALS ONLY</Text>
+              </View>
+            </View>
           </View>
-          <Text style={styles.title}>Live KDS Kitchen</Text>
-          <Text style={styles.subtitle}>Kitchen Display System • Staff Sign In</Text>
-        </View>
 
-        {/* Error Alert */}
-        {errorMsg ? (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={16} color={COLORS.critical} />
-            <Text style={styles.errorText}>{errorMsg}</Text>
-          </View>
-        ) : null}
+          {/* Error Alert */}
+          {errorMsg ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle" size={18} color={COLORS.critical} />
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+          ) : null}
 
-        {/* Role Segmented Tabs */}
-        <View style={styles.roleTabs}>
-          {['HOTEL_ADMIN', 'CASHIER', 'SUPER_ADMIN'].map((r) => {
-            const isSelected = role === r;
-            const label = r === 'HOTEL_ADMIN' ? 'Manager' : r === 'CASHIER' ? 'Cashier' : 'Admin';
-            return (
-              <TouchableOpacity
-                key={r}
-                style={[styles.roleTab, isSelected && styles.roleTabActive]}
-                onPress={() => setRole(r)}
-              >
-                <Text style={[styles.roleTabText, isSelected && styles.roleTabTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Input Fields */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Staff Email</Text>
-          <View style={styles.inputWrapper}>
-            <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="manager@udipi.com"
-              placeholderTextColor={COLORS.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Password</Text>
-          <View style={styles.inputWrapper}>
-            <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor={COLORS.textMuted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-              <Ionicons 
-                name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                size={18} 
-                color={COLORS.textMuted} 
+          {/* Input Fields */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Admin Email</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="admin@foodapp.com"
+                placeholderTextColor={COLORS.textMuted}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
               />
-            </TouchableOpacity>
+            </View>
           </View>
-        </View>
 
-        {/* Sign In Button */}
-        <TouchableOpacity 
-          style={styles.submitBtn} 
-          onPress={handleLogin}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" size="small" />
-          ) : (
-            <>
-              <Text style={styles.submitText}>Connect to Live Kitchen</Text>
-              <Ionicons name="arrow-forward" size={16} color="#FFF" />
-            </>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Admin Password</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="••••••••"
+                placeholderTextColor={COLORS.textMuted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                <Ionicons 
+                  name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                  size={18} 
+                  color={COLORS.textMuted} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Sign In Button */}
+          <TouchableOpacity 
+            style={styles.submitBtn} 
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <View style={styles.submitRow}>
+                <Ionicons name="log-in-outline" size={20} color="#FFF" />
+                <Text style={styles.submitBtnText}>Sign In as Super Admin</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Credentials Info Note */}
+          <View style={styles.credentialPill}>
+            <Ionicons name="information-circle-outline" size={16} color={COLORS.textSecondary} />
+            <Text style={styles.credentialPillText}>
+              Default Admin: <Text style={{ color: '#FFF', fontWeight: '700' }}>admin@foodapp.com</Text> / <Text style={{ color: '#FFF', fontWeight: '700' }}>admin123</Text>
+            </Text>
+          </View>
+
+          {/* Server Config Button */}
+          {onOpenServerConfig && (
+            <TouchableOpacity 
+              style={styles.serverConfigBtn}
+              onPress={onOpenServerConfig}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="server-outline" size={14} color={COLORS.textMuted} />
+              <Text style={styles.serverConfigText}>Server Settings</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
-
-        {/* Server Config Button */}
-        <TouchableOpacity style={styles.serverLink} onPress={onOpenServerConfig}>
-          <Ionicons name="server-outline" size={14} color={COLORS.brand} />
-          <Text style={styles.serverLinkText}>Configure Backend Server IP / Port</Text>
-        </TouchableOpacity>
-      </View>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -160,139 +165,174 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bgPrimary,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
   card: {
-    backgroundColor: COLORS.bgCard,
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: COLORS.bgSecondary,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.borderStrong,
-    padding: 24,
-    maxWidth: 440,
-    width: '100%',
-    alignSelf: 'center',
+    borderColor: COLORS.borderSubtle,
+    padding: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 8,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   iconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 14,
+    width: 64,
+    height: 64,
+    borderRadius: 16,
     backgroundColor: COLORS.brand,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
+    shadowColor: COLORS.brand,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#FFF',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 12,
-    color: COLORS.textMuted,
+    fontSize: 13,
+    color: COLORS.textSecondary,
     marginTop: 4,
+    textAlign: 'center',
+  },
+  badgeRow: {
+    marginTop: 10,
+  },
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(252, 128, 25, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(252, 128, 25, 0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  adminBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.brand,
+    letterSpacing: 0.5,
   },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: COLORS.criticalBg,
     borderWidth: 1,
     borderColor: COLORS.critical,
-    padding: 10,
     borderRadius: 8,
+    padding: 12,
     marginBottom: 16,
   },
   errorText: {
+    flex: 1,
     color: '#F87171',
-    fontSize: 12,
-    flex: 1,
-  },
-  roleTabs: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.bgSecondary,
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 16,
-    gap: 4,
-  },
-  roleTab: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: 6,
-  },
-  roleTabActive: {
-    backgroundColor: COLORS.brand,
-  },
-  roleTabText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textSecondary,
-  },
-  roleTabTextActive: {
-    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '500',
   },
   inputGroup: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   inputLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.textSecondary,
     marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.bgSecondary,
+    backgroundColor: COLORS.bgCard,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    height: 44,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 48,
   },
   inputIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
   input: {
     flex: 1,
-    color: '#FFF',
-    fontSize: 14,
+    color: COLORS.textPrimary,
+    fontSize: 15,
   },
   eyeBtn: {
-    padding: 4,
+    padding: 6,
   },
   submitBtn: {
     backgroundColor: COLORS.brand,
-    height: 46,
-    borderRadius: 8,
-    flexDirection: 'row',
+    borderRadius: 10,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 10,
+    shadowColor: COLORS.brand,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  submitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 8,
   },
-  submitText: {
+  submitBtnText: {
     color: '#FFF',
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
   },
-  serverLink: {
+  credentialPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 16,
+    justifyContent: 'center',
+  },
+  credentialPillText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  serverConfigBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 18,
-    padding: 6,
+    marginTop: 14,
+    paddingVertical: 8,
   },
-  serverLinkText: {
-    color: COLORS.brand,
+  serverConfigText: {
     fontSize: 12,
-    fontWeight: '700',
+    color: COLORS.textMuted,
+    fontWeight: '600',
   },
 });

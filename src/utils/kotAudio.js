@@ -26,7 +26,7 @@ class KDSAudioController {
 
   initAudioElement() {
     try {
-      this.audioElement = new Audio('/sounds/kot_bell.wav');
+      this.audioElement = new Audio('/sounds/high_pitch_alert.wav');
       this.audioElement.preload = 'auto';
       this.audioElement.volume = 1.0;
     } catch (e) {
@@ -102,7 +102,8 @@ class KDSAudioController {
 
       const now = ctx.currentTime;
       // High-penetration resonant frequencies (853Hz + 960Hz) used in European train & kitchen bells
-      const freqs = [853, 960];
+      // High-penetration piercing frequencies to cut through restaurant kitchen & crowd noise
+      const freqs = [2000, 2600];
       freqs.forEach(freq => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();

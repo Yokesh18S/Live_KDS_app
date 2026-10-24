@@ -4,125 +4,180 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 
 export function KDSHeader({ 
+  selectedRestaurant,
+  onOpenHotelSelector,
   onRefresh, 
   isRefreshing, 
   isRinging, 
   onStopSiren, 
+  onTestSound,
   onOpenServerConfig,
-  onOpenRecall,
-  completedCount 
+  onLogout,
+  sortOrder = 'FILO',
+  onToggleSortOrder,
 }) {
   return (
-    <View style={styles.header}>
-      <View style={styles.brandRow}>
-        <View style={styles.brandIcon}>
-          <MaterialCommunityIcons name="chef-hat" size={24} color="#FFF" />
+    <View style={styles.headerContainer}>
+      {/* Top Row: Brand & System Action Buttons */}
+      <View style={styles.topRow}>
+        <View style={styles.brandRow}>
+          <View style={styles.brandIcon}>
+            <MaterialCommunityIcons name="chef-hat" size={20} color="#FFF" />
+          </View>
+          <View>
+            <Text style={styles.brandTitle}>LIVE KDS</Text>
+            <Text style={styles.brandSubtitle}>KITCHEN DISPLAY</Text>
+          </View>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
         </View>
-        <View>
-          <Text style={styles.brandTitle}>LIVE KDS</Text>
-          <Text style={styles.brandSubtitle}>EXPO KITCHEN DISPLAY</Text>
-        </View>
-        <View style={styles.liveBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>LIVE</Text>
+
+        {/* Action Buttons */}
+        <View style={styles.actions}>
+          {/* Mute Siren Button (Visible when ringing) */}
+          {isRinging ? (
+            <TouchableOpacity style={styles.sirenButton} onPress={onStopSiren} activeOpacity={0.7}>
+              <Ionicons name="notifications" size={16} color="#FFF" />
+              <Text style={styles.sirenText}>MUTE</Text>
+            </TouchableOpacity>
+          ) : (
+            /* Test Audio Button (Allows checking loud noise anytime) */
+            <TouchableOpacity 
+              style={[styles.iconBtn, { borderColor: 'rgba(252, 128, 25, 0.4)' }]} 
+              onPress={onTestSound} 
+              activeOpacity={0.7} 
+              title="Test Loud Sound"
+            >
+              <Ionicons name="volume-high-outline" size={18} color={COLORS.brand} />
+            </TouchableOpacity>
+          )}
+
+          {/* Refresh Button */}
+          <TouchableOpacity style={styles.iconBtn} onPress={onRefresh} activeOpacity={0.7} title="Refresh">
+            <Ionicons name={isRefreshing ? "sync" : "refresh"} size={18} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+
+          {/* Server Config Button */}
+          <TouchableOpacity style={styles.iconBtn} onPress={onOpenServerConfig} activeOpacity={0.7} title="Server Config">
+            <Ionicons name="server-outline" size={17} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+
+          {/* Logout Button */}
+          {onLogout && (
+            <TouchableOpacity 
+              style={[styles.iconBtn, { borderColor: 'rgba(239, 68, 68, 0.35)' }]} 
+              onPress={onLogout} 
+              activeOpacity={0.7}
+              title="Logout"
+            >
+              <Ionicons name="log-out-outline" size={18} color={COLORS.critical} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      <View style={styles.actions}>
-        {/* Ringing Siren Button */}
-        {isRinging && (
-          <TouchableOpacity style={styles.sirenButton} onPress={onStopSiren} activeOpacity={0.7}>
-            <Ionicons name="notifications" size={20} color="#FFF" />
-            <Text style={styles.sirenText}>MUTE</Text>
+      {/* Sub Row: Full-width Hotel Selector & Sort Order (Completely fixes overlapping) */}
+      <View style={styles.subRow}>
+        {selectedRestaurant && (
+          <TouchableOpacity 
+            style={styles.hotelPill} 
+            onPress={onOpenHotelSelector}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="storefront-outline" size={16} color={COLORS.brand} />
+            <Text style={styles.hotelName} numberOfLines={1}>
+              {selectedRestaurant.name}
+            </Text>
+            <View style={styles.switchBadge}>
+              <Text style={styles.switchBadgeText}>Switch</Text>
+              <Ionicons name="chevron-down" size={11} color={COLORS.brand} />
+            </View>
           </TouchableOpacity>
         )}
 
-        {/* Server Config Button */}
-        <TouchableOpacity style={styles.iconBtn} onPress={onOpenServerConfig} activeOpacity={0.7}>
-          <Ionicons name="server-outline" size={20} color={COLORS.textPrimary} />
-        </TouchableOpacity>
-
-        {/* History / Recall Button */}
-        <TouchableOpacity style={styles.iconBtn} onPress={onOpenRecall} activeOpacity={0.7}>
-          <Ionicons name="time-outline" size={20} color={COLORS.textPrimary} />
-          {completedCount > 0 && (
-            <View style={styles.badgeCount}>
-              <Text style={styles.badgeText}>{completedCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Refresh Button */}
-        <TouchableOpacity style={styles.iconBtn} onPress={onRefresh} activeOpacity={0.7}>
-          <Ionicons name={isRefreshing ? "sync" : "refresh"} size={20} color={COLORS.textPrimary} />
-        </TouchableOpacity>
+        {onToggleSortOrder && (
+          <TouchableOpacity 
+            style={styles.sortPill}
+            onPress={onToggleSortOrder}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="swap-vertical" size={13} color={COLORS.brand} />
+            <Text style={styles.sortPillText}>
+              {sortOrder === 'FILO' ? 'FILO (Newest)' : 'FIFO (Oldest)'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    height: 60,
+  headerContainer: {
     backgroundColor: COLORS.bgSecondary,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderSubtle,
+  },
+  topRow: {
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
   },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   brandIcon: {
-    width: 38,
-    height: 38,
+    width: 32,
+    height: 32,
     borderRadius: 8,
     backgroundColor: COLORS.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
   brandTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     color: '#FFF',
     letterSpacing: -0.5,
   },
   brandSubtitle: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700',
     color: COLORS.textMuted,
   },
   liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.3)',
     marginLeft: 4,
   },
   liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: COLORS.ready,
   },
   liveText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
     color: COLORS.ready,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   sirenButton: {
     flexDirection: 'row',
@@ -136,31 +191,73 @@ const styles = StyleSheet.create({
   sirenText: {
     color: '#FFF',
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   iconBtn: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 8,
     backgroundColor: COLORS.bgCard,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
   },
-  badgeCount: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: COLORS.blue,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    paddingTop: 2,
+    gap: 8,
+  },
+  hotelPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.bgCard,
+    borderWidth: 1,
+    borderColor: 'rgba(252, 128, 25, 0.4)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
   },
-  badgeText: {
-    color: '#FFF',
-    fontSize: 9,
+  hotelName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    flex: 1,
+  },
+  switchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(252, 128, 25, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  switchBadgeText: {
+    fontSize: 10,
     fontWeight: '800',
+    color: COLORS.brand,
+  },
+  sortPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.bgCard,
+    borderWidth: 1,
+    borderColor: COLORS.borderSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  sortPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
   },
 });

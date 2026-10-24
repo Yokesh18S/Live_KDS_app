@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, Alert, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { BACKEND_ENDPOINTS, getActiveBaseUrl, setActiveBaseUrl, getActiveRestaurantId, setActiveRestaurantId } from '../services/api';
 
-export function ServerConfigModal({ visible, onClose, onSaved }) {
+export function ServerConfigModal({ visible, isOpen, onClose, onSaved, onChanged }) {
+  const isModalVisible = Boolean(visible !== undefined ? visible : isOpen);
   const [currentUrl, setCurrentUrl] = useState(getActiveBaseUrl());
   const [restaurantId, setRestaurantId] = useState(String(getActiveRestaurantId()));
 
@@ -16,63 +17,75 @@ export function ServerConfigModal({ visible, onClose, onSaved }) {
     setActiveBaseUrl(currentUrl);
     setActiveRestaurantId(parseInt(restaurantId, 10) || 1);
     Alert.alert('Saved', 'Backend endpoint updated successfully!');
-    onSaved();
+    if (onSaved) onSaved();
+    if (onChanged) onChanged();
     onClose();
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Backend Connection</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+    <Modal 
+      visible={isModalVisible} 
+      transparent 
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.overlay} 
+        activeOpacity={1} 
+        onPress={onClose}
+      >
+        <TouchableWithoutFeedback>
+          <View style={styles.modal}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Backend Connection</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sectionLabel}>Select Preset Endpoint</Text>
+            <View style={styles.presets}>
+              {BACKEND_ENDPOINTS.map((item, idx) => {
+                const isSelected = currentUrl === item.url;
+                return (
+                  <TouchableOpacity 
+                    key={idx} 
+                    style={[styles.presetItem, isSelected && styles.presetItemActive]}
+                    onPress={() => handleSelectPreset(item.url)}
+                  >
+                    <Text style={[styles.presetText, isSelected && styles.presetTextActive]}>{item.label}</Text>
+                    <Text style={styles.presetUrl}>{item.url}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.sectionLabel}>Custom Backend URL</Text>
+            <TextInput 
+              style={styles.input}
+              value={currentUrl}
+              onChangeText={setCurrentUrl}
+              placeholder="http://192.168.1.X:8001"
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.sectionLabel}>Restaurant ID</Text>
+            <TextInput 
+              style={styles.input}
+              value={restaurantId}
+              onChangeText={setRestaurantId}
+              placeholder="1"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="numeric"
+            />
+
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+              <Text style={styles.saveBtnText}>Connect & Save</Text>
             </TouchableOpacity>
           </View>
-
-          <Text style={styles.sectionLabel}>Select Preset Endpoint</Text>
-          <View style={styles.presets}>
-            {BACKEND_ENDPOINTS.map((item, idx) => {
-              const isSelected = currentUrl === item.url;
-              return (
-                <TouchableOpacity 
-                  key={idx} 
-                  style={[styles.presetItem, isSelected && styles.presetItemActive]}
-                  onPress={() => handleSelectPreset(item.url)}
-                >
-                  <Text style={[styles.presetText, isSelected && styles.presetTextActive]}>{item.label}</Text>
-                  <Text style={styles.presetUrl}>{item.url}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={styles.sectionLabel}>Custom Backend URL</Text>
-          <TextInput 
-            style={styles.input}
-            value={currentUrl}
-            onChangeText={setCurrentUrl}
-            placeholder="http://192.168.1.X:8001"
-            placeholderTextColor={COLORS.textMuted}
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.sectionLabel}>Restaurant ID</Text>
-          <TextInput 
-            style={styles.input}
-            value={restaurantId}
-            onChangeText={setRestaurantId}
-            placeholder="1"
-            placeholderTextColor={COLORS.textMuted}
-            keyboardType="numeric"
-          />
-
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>Connect & Save</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+        </TouchableWithoutFeedback>
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -96,6 +109,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  closeBtn: {
+    padding: 4,
   },
   title: {
     fontSize: 17,

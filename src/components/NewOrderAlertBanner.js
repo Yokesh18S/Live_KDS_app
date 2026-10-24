@@ -10,19 +10,20 @@ export function NewOrderAlertBanner({ newOrders, onAcceptAll, onMute }) {
   const firstOrder = newOrders[0];
   const orderType = getOrderTypeDetails(firstOrder);
   const count = newOrders.length;
+  const billLabel = firstOrder.bill_no ? `Bill #${firstOrder.bill_no}` : `Bill #${firstOrder.branch_order_id || firstOrder.order_id}`;
 
   return (
     <View style={styles.banner}>
       <View style={styles.left}>
         <View style={styles.alertIcon}>
-          <Ionicons name="notifications" size={20} color="#FFF" />
+          <Ionicons name="notifications" size={22} color="#FFF" />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>
             {count === 1 ? '🚨 NEW ORDER RECEIVED!' : `🚨 ${count} NEW ORDERS AWAITING!`}
           </Text>
           <Text style={styles.subtitle} numberOfLines={1}>
-            Order #{firstOrder.branch_order_id || firstOrder.order_id} • {orderType.label} • {firstOrder.items?.length || 0} Items
+            {billLabel} • {orderType.label} • {firstOrder.items?.length || 0} Items
           </Text>
         </View>
       </View>
@@ -33,7 +34,7 @@ export function NewOrderAlertBanner({ newOrders, onAcceptAll, onMute }) {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.acceptBtn} onPress={onAcceptAll} activeOpacity={0.8}>
-          <Ionicons name="checkmark-circle" size={16} color="#FFF" style={{ marginRight: 4 }} />
+          <Ionicons name="checkmark-circle" size={17} color="#FFF" style={{ marginRight: 4 }} />
           <Text style={styles.acceptText}>{count === 1 ? 'Accept' : `Accept All (${count})`}</Text>
         </TouchableOpacity>
       </View>
@@ -48,7 +49,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
   left: {
     flexDirection: 'row',
@@ -57,21 +58,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   alertIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '900',
     color: '#FFF',
+    letterSpacing: 0.3,
   },
   subtitle: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.95)',
     marginTop: 2,
   },
   buttons: {
@@ -80,27 +83,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   muteBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 6,
   },
   muteText: {
     color: '#FFF',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   acceptBtn: {
     backgroundColor: COLORS.ready,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 6,
     flexDirection: 'row',
     alignItems: 'center',
   },
   acceptText: {
     color: '#FFF',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '900',
   },
 });

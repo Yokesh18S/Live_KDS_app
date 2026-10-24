@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ChefHat, Bell, BellOff, Volume2, Maximize, Minimize, History, LayoutGrid, Columns, RefreshCw, User } from 'lucide-react';
+import { ChefHat, Bell, BellOff, Volume2, History, LayoutGrid, Columns, RefreshCw, User, Store, ChevronDown } from 'lucide-react';
 import { kdsAudio } from '../utils/kotAudio';
 
 export const Header = ({ 
   viewMode, 
   setViewMode, 
+  selectedRestaurant,
+  onOpenHotelSelector,
   onRefresh, 
   isRefreshing, 
   completedCount, 
@@ -13,7 +15,6 @@ export const Header = ({
   currentUser 
 }) => {
   const [audioState, setAudioState] = useState({ isRinging: false, isMuted: false, isUnlocked: false });
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     const unsub = kdsAudio.subscribe((state) => {
@@ -22,39 +23,59 @@ export const Header = ({
     return () => unsub();
   }, []);
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
-      }
-    }
-  };
-
   const toggleAudioMute = () => {
     kdsAudio.setMuted(!audioState.isMuted);
-  };
-
-  const testAudioBell = () => {
-    kdsAudio.unlock();
-    kdsAudio.playSingleChime();
   };
 
   return (
     <header className="kds-header">
       <div className="kds-brand">
         <div className="brand-icon">
-          <ChefHat size={24} />
+          <ChefHat size={22} />
         </div>
         <div className="brand-titles">
           <h1>LIVE KDS</h1>
-          <span>Kitchen Display System</span>
+          <span>KITCHEN MONITOR</span>
         </div>
-        <div className="header-status-badge">
-          <div className="live-pulse-dot" />
-          <span>KITCHEN LIVE</span>
-        </div>
+
+        {/* Selected Hotel Pill */}
+        {selectedRestaurant && (
+          <button 
+            onClick={onOpenHotelSelector}
+            title="Click to Switch Hotel Branch"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#1a1e27',
+              border: '1px solid rgba(252, 128, 25, 0.4)',
+              borderRadius: '8px',
+              padding: '5px 10px',
+              color: '#fff',
+              cursor: 'pointer',
+              marginLeft: '8px'
+            }}
+          >
+            <Store size={15} color="#fc8019" />
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {selectedRestaurant.name}
+            </span>
+            <span style={{
+              background: 'rgba(252, 128, 25, 0.2)',
+              color: '#fc8019',
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              padding: '2px 6px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px'
+            }}>
+              <span>Switch</span>
+              <ChevronDown size={11} />
+            </span>
+          </button>
+        )}
       </div>
 
       <div className="header-actions">
@@ -70,20 +91,20 @@ export const Header = ({
         ) : (
           <button 
             className="icon-btn" 
-            title={audioState.isMuted ? "Unmute Kitchen Audio" : "Kitchen Audio Active (Click to test/mute)"}
+            title={audioState.isMuted ? "Unmute Kitchen Audio" : "Kitchen Audio Active"}
             onClick={toggleAudioMute}
           >
-            {audioState.isMuted ? <BellOff size={19} color="#ef4444" /> : <Volume2 size={19} color="#10b981" />}
+            {audioState.isMuted ? <BellOff size={18} color="#ef4444" /> : <Volume2 size={18} color="#10b981" />}
           </button>
         )}
 
-        {/* View Switcher (Kanban vs Grid) - Desktop & Tablet */}
+        {/* View Switcher (Kanban vs Grid) */}
         <button 
           className="icon-btn" 
           title={viewMode === 'kanban' ? "Switch to Grid Matrix View" : "Switch to Kanban Columns"}
           onClick={() => setViewMode(viewMode === 'kanban' ? 'grid' : 'kanban')}
         >
-          {viewMode === 'kanban' ? <LayoutGrid size={19} /> : <Columns size={19} />}
+          {viewMode === 'kanban' ? <LayoutGrid size={18} /> : <Columns size={18} />}
         </button>
 
         {/* Recall History Drawer Button */}
@@ -93,7 +114,7 @@ export const Header = ({
           onClick={onOpenRecall}
           style={{ position: 'relative' }}
         >
-          <History size={19} />
+          <History size={18} />
           {completedCount > 0 && (
             <span style={{
               position: 'absolute',
@@ -101,7 +122,7 @@ export const Header = ({
               right: '-4px',
               background: '#3b82f6',
               color: '#fff',
-              fontSize: '10px',
+              fontSize: '0.65rem',
               fontWeight: 800,
               padding: '1px 5px',
               borderRadius: '10px'
@@ -111,31 +132,25 @@ export const Header = ({
           )}
         </button>
 
-        {/* Manual Refresh Button */}
-        <button 
-          className={`icon-btn ${isRefreshing ? 'spin-refresh' : ''}`} 
-          title="Refresh Active Orders"
-          onClick={onRefresh}
-        >
-          <RefreshCw size={18} />
-        </button>
-
-        {/* Fullscreen Kiosk Mode Button */}
+        {/* Refresh Button */}
         <button 
           className="icon-btn" 
-          title="Toggle Fullscreen Kiosk Mode"
-          onClick={toggleFullscreen}
+          title="Refresh Live Orders"
+          onClick={() => onRefresh(false)}
         >
-          {isFullscreen ? <Minimize size={19} /> : <Maximize size={19} />}
+          <RefreshCw size={18} className={isRefreshing ? "spin" : ""} />
         </button>
 
-        {/* Staff / Manager Login */}
+        {/* Super Admin Login / Profile Button */}
         <button 
           className="icon-btn" 
-          title={currentUser ? `Logged in: ${currentUser.name || currentUser.role}` : "Kitchen Staff Login"}
+          title={currentUser ? "Super Admin Account" : "Sign In as Super Admin"}
           onClick={onOpenLogin}
+          style={{
+            borderColor: currentUser ? 'rgba(252, 128, 25, 0.4)' : undefined
+          }}
         >
-          <User size={19} color={currentUser ? "#10b981" : "inherit"} />
+          <User size={18} color={currentUser ? "#fc8019" : undefined} />
         </button>
       </div>
     </header>

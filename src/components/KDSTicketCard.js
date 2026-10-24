@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { formatKitchenTimer, formatTime, getOrderTypeDetails, getCustomerName } from '../utils/formatters';
 
@@ -23,7 +23,7 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
   const customerName = getCustomerName(order);
   const orderStatus = (order.status || 'PENDING').toUpperCase();
 
-  const isUrgent = timerInfo.urgency === 'critical' && orderStatus !== 'SERVED';
+  const isUrgent = timerInfo.urgency === 'critical' && orderStatus !== 'SERVED' && orderStatus !== 'READY';
 
   const getTimerColors = () => {
     switch (timerInfo.urgency) {
@@ -35,32 +35,53 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
 
   const timerColor = getTimerColors();
 
+  // Display Bill # prominently (without the internal #177... series)
+  const billDisplay = order.bill_no ? `Bill #${order.bill_no}` : `Bill #${order.branch_order_id || order.order_id}`;
+
   return (
     <View style={[styles.card, isUrgent && styles.cardUrgent]}>
-      {/* Header: Order #, Bill #, Live Timer */}
+      {/* Header: High-Visibility BILL #, Time, Status & Timer */}
       <View style={styles.cardHeader}>
-        <View>
-          <Text style={styles.orderNumber}>#{order.branch_order_id || order.order_id}</Text>
-          <Text style={styles.billNumber}>Bill #{order.bill_no || '-'} • {formatTime(order.created_at)}</Text>
+        <View style={styles.billBox}>
+          <Text style={styles.billHeadline}>{billDisplay}</Text>
+          <Text style={styles.orderTimeText}>{formatTime(order.created_at)}</Text>
         </View>
 
-        <View style={[styles.timerBadge, { backgroundColor: timerColor.bg }]}>
-          <Ionicons name="time-outline" size={13} color={timerColor.text} />
-          <Text style={[styles.timerText, { color: timerColor.text }]}>{timerInfo.elapsedStr}</Text>
+        <View style={styles.headerRight}>
+          {/* Status Badge */}
+          {orderStatus === 'PREPARING' && (
+            <View style={styles.statusPillPrep}>
+              <MaterialCommunityIcons name="pot-steam" size={14} color={COLORS.prep} />
+              <Text style={styles.statusPillPrepText}>IN KITCHEN</Text>
+            </View>
+          )}
+
+          {orderStatus === 'READY' && (
+            <View style={styles.statusPillReady}>
+              <Ionicons name="checkmark-circle" size={14} color={COLORS.ready} />
+              <Text style={styles.statusPillReadyText}>READY</Text>
+            </View>
+          )}
+
+          {/* Bold Live Elapsed Timer */}
+          <View style={[styles.timerBadge, { backgroundColor: timerColor.bg }]}>
+            <Ionicons name="time" size={14} color={timerColor.text} />
+            <Text style={[styles.timerText, { color: timerColor.text }]}>{timerInfo.elapsedStr}</Text>
+          </View>
         </View>
       </View>
 
       {/* Meta Row: Table & Waiter / Customer */}
       <View style={styles.metaRow}>
         <View style={[styles.typeBadge, { backgroundColor: orderType.bg }]}>
-          <Text style={[styles.typeText, { color: orderType.color }]}>{orderType.label}</Text>
+          <Text style={[styles.typeText, { color: orderType.color }]}>{orderType.label.toUpperCase()}</Text>
         </View>
         <Text style={styles.serverText}>
           {order.placed_by_name ? `Waiter: ${order.placed_by_name}` : customerName}
         </Text>
       </View>
 
-      {/* Items List with Tap-to-Strike */}
+      {/* Items List with Extra Bold Font & Tap-to-Strike */}
       <View style={styles.itemsList}>
         {(order.items || []).map((item, idx) => {
           const isStruck = !!struckMap[idx];
@@ -73,7 +94,7 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
             >
               <View style={styles.itemLeft}>
                 <View style={[styles.checkbox, isStruck && styles.checkboxActive]}>
-                  {isStruck && <Ionicons name="checkmark" size={12} color="#FFF" />}
+                  {isStruck && <Ionicons name="checkmark" size={14} color="#FFF" />}
                 </View>
                 <Text style={[styles.itemName, isStruck && styles.itemNameStruck]}>
                   {item.name}
@@ -90,12 +111,14 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
       {/* Special Notes (if any) */}
       {order.notes ? (
         <View style={styles.notesBox}>
+          <Ionicons name="alert-circle" size={14} color="#FBBF24" style={{ marginTop: 2 }} />
           <Text style={styles.notesText}>Note: {order.notes}</Text>
         </View>
       ) : null}
 
-      {/* Action Progression Button */}
+      {/* Action Progression Button (Bolder & Taller) */}
       <View style={styles.actionRow}>
+        {/* Step 1: PENDING -> Click to Start Prep (Stays in New tab) */}
         {orderStatus === 'PENDING' && (
           <TouchableOpacity 
             style={[styles.actionBtn, { backgroundColor: COLORS.brand }]}
@@ -103,35 +126,40 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
             activeOpacity={0.8}
           >
             <Text style={styles.actionBtnText}>Accept & Start Prep</Text>
-            <Ionicons name="chevron-forward" size={16} color="#FFF" />
+            <Ionicons name="chevron-forward" size={18} color="#FFF" />
           </TouchableOpacity>
         )}
 
+        {/* Step 2: PREPARING -> Click Mark Ready (Moves to History tab) */}
         {orderStatus === 'PREPARING' && (
           <TouchableOpacity 
             style={[styles.actionBtn, { backgroundColor: COLORS.ready }]}
             onPress={() => onUpdateStatus(order.order_id, 'READY')}
             activeOpacity={0.8}
           >
-            <Ionicons name="checkmark-circle-outline" size={18} color="#FFF" style={{ marginRight: 6 }} />
-            <Text style={styles.actionBtnText}>Mark Food Ready</Text>
+            <Ionicons name="checkmark-circle-outline" size={20} color="#FFF" style={{ marginRight: 6 }} />
+            <Text style={styles.actionBtnText}>Mark Ready ✓</Text>
           </TouchableOpacity>
         )}
 
-        {orderStatus === 'READY' && (
-          <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: COLORS.blue }]}
-            onPress={() => onUpdateStatus(order.order_id, 'SERVED')}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="checkmark-done" size={18} color="#FFF" style={{ marginRight: 6 }} />
-            <Text style={styles.actionBtnText}>Dispatch / Handover</Text>
-          </TouchableOpacity>
-        )}
+        {/* In History Tab: READY / SERVED -> Option to Recall back to Kitchen */}
+        {(orderStatus === 'READY' || orderStatus === 'SERVED') && (
+          <View style={styles.historyRow}>
+            <View style={styles.completedBadge}>
+              <Ionicons name="checkmark-done" size={16} color={COLORS.ready} />
+              <Text style={styles.completedBadgeText}>
+                {orderStatus === 'READY' ? 'Food Ready' : 'Completed / Handed Over'}
+              </Text>
+            </View>
 
-        {orderStatus === 'SERVED' && (
-          <View style={styles.completedBox}>
-            <Text style={styles.completedText}>Completed ✓</Text>
+            <TouchableOpacity 
+              style={styles.recallBtn}
+              onPress={() => onUpdateStatus(order.order_id, 'PREPARING')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-undo-outline" size={15} color={COLORS.blue} style={{ marginRight: 4 }} />
+              <Text style={styles.recallBtnText}>Recall to Kitchen</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -142,42 +170,92 @@ export function KDSTicketCard({ order, onUpdateStatus }) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.bgCard,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: 1.5,
     borderColor: COLORS.borderSubtle,
-    padding: 14,
-    marginBottom: 12,
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   cardUrgent: {
     borderColor: COLORS.critical,
-    borderWidth: 1.5,
+    borderWidth: 2,
+    backgroundColor: 'rgba(239, 68, 68, 0.04)',
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
-  orderNumber: {
-    fontSize: 18,
-    fontWeight: '800',
+  billBox: {
+    flex: 1,
+  },
+  billHeadline: {
+    fontSize: 22,
+    fontWeight: '900',
     color: '#FFF',
+    letterSpacing: -0.5,
   },
-  billNumber: {
-    fontSize: 11,
+  orderTimeText: {
+    fontSize: 12,
+    fontWeight: '700',
     color: COLORS.textMuted,
     marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusPillPrep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.prepBg,
+    borderWidth: 1.5,
+    borderColor: 'rgba(234, 179, 8, 0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusPillPrepText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: COLORS.prep,
+    letterSpacing: 0.5,
+  },
+  statusPillReady: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.readyBg,
+    borderWidth: 1.5,
+    borderColor: 'rgba(16, 185, 129, 0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusPillReadyText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: COLORS.ready,
+    letterSpacing: 0.5,
   },
   timerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   timerText: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
   metaRow: {
@@ -186,49 +264,53 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderSubtle,
-    paddingVertical: 8,
-    marginTop: 6,
+    paddingVertical: 10,
+    marginTop: 8,
   },
   typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   typeText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   serverText: {
-    fontSize: 12,
-    color: COLORS.textMuted,
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.textSecondary,
   },
   itemsList: {
-    marginVertical: 10,
-    gap: 6,
+    marginVertical: 12,
+    gap: 8,
   },
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
   itemStruck: {
-    opacity: 0.4,
+    opacity: 0.35,
   },
   itemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     flex: 1,
   },
   checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1.5,
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
     borderColor: COLORS.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
@@ -238,60 +320,99 @@ const styles = StyleSheet.create({
     borderColor: COLORS.ready,
   },
   itemName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
     flex: 1,
+    letterSpacing: -0.2,
   },
   itemNameStruck: {
     textDecorationLine: 'line-through',
   },
   qtyBadge: {
     backgroundColor: COLORS.bgCardAccent,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: COLORS.borderSubtle,
   },
   qtyText: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '900',
     color: '#FFF',
   },
   notesBox: {
-    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-    padding: 6,
-    borderRadius: 6,
-    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    backgroundColor: 'rgba(251, 191, 36, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 10,
   },
   notesText: {
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: '700',
     color: '#FBBF24',
-    fontStyle: 'italic',
+    flex: 1,
   },
   actionRow: {
-    marginTop: 4,
+    marginTop: 6,
   },
   actionBtn: {
-    height: 42,
-    borderRadius: 8,
+    height: 48,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
   },
   actionBtnText: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.readyBg,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  completedBadgeText: {
+    color: COLORS.ready,
+    fontSize: 12,
     fontWeight: '800',
   },
-  completedBox: {
-    paddingVertical: 8,
+  recallBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  completedText: {
-    color: COLORS.textMuted,
+  recallBtnText: {
+    color: COLORS.blue,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

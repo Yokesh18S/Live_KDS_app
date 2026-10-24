@@ -6,37 +6,54 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Vibration, 
-  Dimensions 
+  Dimensions,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useKeepAwake } from 'expo-keep-awake';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from './src/constants/theme';
-import { kdsApi, getAuthToken, setAuthToken } from './src/services/api';
-import { getAuthSession, clearAuthSession } from './src/services/storage';
+import { initAudioMode, playLoudAlarmSound, stopLoudAlarmSound } from './src/utils/expoSound';
+import { kdsApi, getAuthToken, setAuthToken, setActiveRestaurant } from './src/services/api';
+import { getAuthSession, clearAuthSession, saveSelectedRestaurant, getSelectedRestaurant } from './src/services/storage';
 import { KDSHeader } from './src/components/KDSHeader';
 import { NewOrderAlertBanner } from './src/components/NewOrderAlertBanner';
 import { KDSTicketCard } from './src/components/KDSTicketCard';
 import { ServerConfigModal } from './src/components/ServerConfigModal';
-import { RecallModal } from './src/components/RecallModal';
 import { KDSLoginScreen } from './src/components/KDSLoginScreen';
+import { HotelSelectionScreen } from './src/components/HotelSelectionScreen';
 
 export default function App() {
+  // Keep the device screen ON permanently while the kitchen app is open
+  useKeepAwake();
+
   const [currentUser, setCurrentUser] = useState(null);
+  const [selectedRestaurant, setSelectedRestaurantState] = useState(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [isHotelSelectorOpen, setIsHotelSelectorOpen] = useState(false);
   const [orders, setOrders] = useState([]);
-  const [completedOrders, setCompletedOrders] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('PENDING'); // 'PENDING' | 'PREPARING' | 'READY' | 'ALL'
+
+  // Streamlined rush hour tabs: 'NEW' (Pending + Preparing) | 'HISTORY' (Ready + Served)
+  const [activeTab, setActiveTab] = useState('NEW');
+
+  // Sorting: FILO (First In Last Out / Newest first) by default
+  const [sortOrder, setSortOrder] = useState('FILO');
+
   const [isRinging, setIsRinging] = useState(false);
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
-  const [isRecallModalOpen, setIsRecallModalOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
 
   const knownOrderIdsRef = useRef(new Set());
   const initialLoadRef = useRef(true);
 
-  // Restore saved auth session on boot
+  // Initialize native audio mode on boot
+  useEffect(() => {
+    initAudioMode();
+  }, []);
+
+  // Restore saved auth session & selected restaurant on boot
   useEffect(() => {
     async function restoreSession() {
       try {
@@ -44,8 +61,15 @@ export default function App() {
         if (saved?.token) {
           setAuthToken(saved.token);
           setCurrentUser(saved.user);
+
+          const savedRest = await getSelectedRestaurant();
+          if (savedRest) {
+            setSelectedRestaurantState(savedRest);
+            setActiveRestaurant(savedRest);
+          }
         }
       } catch (e) {
+        console.warn('Session restore note:', e);
       } finally {
         setIsAuthChecking(false);
       }
@@ -63,15 +87,15 @@ export default function App() {
 
   const isTablet = windowWidth >= 768;
 
-  // Fetch Live Orders from FastAPI Backend (only if authenticated)
+  // Fetch Live Orders for currently selected hotel
   const fetchOrders = useCallback(async (isSilent = false) => {
-    if (!getAuthToken()) {
-      return; // Do not spam requests if not logged in
+    if (!getAuthToken() || !selectedRestaurant) {
+      return;
     }
 
     if (!isSilent) setIsRefreshing(true);
     try {
-      const data = await kdsApi.getLiveOrders();
+      const data = await kdsApi.getLiveOrders(selectedRestaurant.id);
       const list = Array.isArray(data) ? data : [];
 
       // Check for newly arrived PENDING orders
@@ -80,49 +104,55 @@ export default function App() {
         !knownOrderIdsRef.current.has(o.order_id)
       );
 
-      // Trigger siren / vibration alert on newly arrived orders
+      // Trigger siren sound and vibration alert on newly arrived orders
       if (!initialLoadRef.current && newPending.length > 0) {
         setIsRinging(true);
-        Vibration.vibrate([400, 200, 400], true);
+        Vibration.vibrate([600, 200, 600, 200, 600], true);
+        playLoudAlarmSound();
       }
 
       list.forEach(o => knownOrderIdsRef.current.add(o.order_id));
       initialLoadRef.current = false;
 
-      // Extract recently completed
-      const served = list.filter(o => (o.status || '').toUpperCase() === 'SERVED');
-      if (served.length > 0) {
-        setCompletedOrders(prev => {
-          const map = new Map();
-          [...served, ...prev].forEach(o => map.set(o.order_id, o));
-          return Array.from(map.values()).slice(0, 30);
-        });
-      }
-
       setOrders(list);
     } catch (err) {
-      console.warn('[Expo KDS] Fetch note:', err.message);
+      console.warn('[KDS Fetch Orders Error]:', err.message);
     } finally {
       setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedRestaurant]);
 
-  // Polling loop (every 5 seconds)
+  // Polling loop (every 5 seconds) when hotel is selected
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && selectedRestaurant) {
       fetchOrders();
       const interval = setInterval(() => {
         fetchOrders(true);
       }, 5000);
       return () => clearInterval(interval);
     }
-  }, [currentUser, fetchOrders]);
+  }, [currentUser, selectedRestaurant, fetchOrders]);
 
   const stopSiren = () => {
     setIsRinging(false);
     Vibration.cancel();
+    stopLoudAlarmSound();
   };
 
+  const handleTestSound = () => {
+    if (isRinging) {
+      stopSiren();
+    } else {
+      setIsRinging(true);
+      Vibration.vibrate([600, 200, 600, 200, 600], true);
+      playLoudAlarmSound();
+    }
+  };
+
+  // Update Status handler:
+  // PENDING -> PREPARING (stays in NEW tab)
+  // PREPARING -> READY (moves to HISTORY tab)
+  // READY -> PREPARING (recall back to NEW tab)
   const handleUpdateStatus = async (orderId, newStatus) => {
     setOrders(prev => prev.map(o => o.order_id === orderId ? { ...o, status: newStatus } : o));
     try {
@@ -134,179 +164,195 @@ export default function App() {
     }
   };
 
+  // Accept all pending: updates all PENDING to PREPARING (they remain in NEW tab)
   const handleAcceptAllPending = async () => {
     stopSiren();
-    const pending = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
-    for (const ord of pending) {
+    const pendingList = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
+    for (const ord of pendingList) {
       handleUpdateStatus(ord.order_id, 'PREPARING');
     }
   };
 
-  const handleRecallOrder = async (orderId) => {
-    await handleUpdateStatus(orderId, 'READY');
-    setIsRecallModalOpen(false);
-  };
-
-  const handleLogout = async () => {
-    await clearAuthSession();
-    setAuthToken(null);
-    setCurrentUser(null);
+  const handleSelectHotel = async (hotel) => {
+    setSelectedRestaurantState(hotel);
+    setActiveRestaurant(hotel);
+    await saveSelectedRestaurant(hotel);
+    setIsHotelSelectorOpen(false);
+    knownOrderIdsRef.current.clear();
+    initialLoadRef.current = true;
     setOrders([]);
   };
 
-  const pending = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
-  const preparing = orders.filter(o => (o.status || '').toUpperCase() === 'PREPARING');
-  const ready = orders.filter(o => (o.status || '').toUpperCase() === 'READY');
-
-  const getFilteredList = () => {
-    switch (activeTab) {
-      case 'PENDING': return pending;
-      case 'PREPARING': return preparing;
-      case 'READY': return ready;
-      default: return orders.filter(o => o.status !== 'SERVED');
-    }
+  const handleLogout = async () => {
+    stopSiren();
+    await clearAuthSession();
+    setAuthToken(null);
+    setCurrentUser(null);
+    setSelectedRestaurantState(null);
+    setIsHotelSelectorOpen(false);
+    setOrders([]);
   };
 
-  const displayOrders = getFilteredList();
+  // 1. New Orders: PENDING & PREPARING
+  const newOrders = orders.filter(o => {
+    const s = (o.status || 'PENDING').toUpperCase();
+    return s === 'PENDING' || s === 'PREPARING';
+  });
+
+  // 2. History Orders: READY & SERVED
+  const historyOrders = orders.filter(o => {
+    const s = (o.status || '').toUpperCase();
+    return s === 'READY' || s === 'SERVED';
+  });
+
+  // Pending strictly for audio / alert banner
+  const pendingOnly = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
+
+  // Filter based on active tab ('NEW' or 'HISTORY')
+  const currentTabList = activeTab === 'NEW' ? newOrders : historyOrders;
+
+  // Sort orders based on FILO (First In Last Out / Newest first) or FIFO (Oldest first)
+  const sortedOrders = [...currentTabList].sort((a, b) => {
+    if (sortOrder === 'FILO') {
+      // FILO: Newest timestamp / highest bill number first
+      const timeA = new Date(a.created_at || 0).getTime();
+      const timeB = new Date(b.created_at || 0).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (Number(b.bill_no) || Number(b.order_id) || 0) - (Number(a.bill_no) || Number(a.order_id) || 0);
+    } else {
+      // FIFO: Oldest timestamp / lowest bill number first
+      const timeA = new Date(a.created_at || 0).getTime();
+      const timeB = new Date(b.created_at || 0).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return (Number(a.bill_no) || Number(a.order_id) || 0) - (Number(b.bill_no) || Number(b.order_id) || 0);
+    }
+  });
+
+  if (isAuthChecking) {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.bgPrimary, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={COLORS.brand} />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="light" backgroundColor={COLORS.bgSecondary} />
         
-        {/* If staff is not logged in, show Kitchen Sign In Screen */}
+        {/* Step 1: Login Screen (Super Admin Credentials Only) */}
         {!currentUser ? (
           <KDSLoginScreen 
             onLoginSuccess={(u) => {
               setCurrentUser(u);
-              fetchOrders(false);
+              if (!selectedRestaurant) {
+                setIsHotelSelectorOpen(true);
+              }
             }}
             onOpenServerConfig={() => setIsServerModalOpen(true)}
           />
+        ) : (!selectedRestaurant || isHotelSelectorOpen) ? (
+          /* Step 2: Hotel Selection Screen (Shows Connected Hotels) */
+          <HotelSelectionScreen 
+            onSelectHotel={handleSelectHotel}
+            selectedHotelId={selectedRestaurant?.id}
+            canCancel={!!selectedRestaurant}
+            onClose={() => setIsHotelSelectorOpen(false)}
+            onLogout={handleLogout}
+          />
         ) : (
+          /* Step 3: Streamlined Two-Tab KDS / KOT Display (New vs History) */
           <View style={{ flex: 1 }}>
-            {/* Top Header */}
+            {/* Top Header with clean two-row layout and Direct Sound Test Button */}
             <KDSHeader 
+              selectedRestaurant={selectedRestaurant}
+              onOpenHotelSelector={() => setIsHotelSelectorOpen(true)}
               onRefresh={() => fetchOrders(false)}
               isRefreshing={isRefreshing}
               isRinging={isRinging}
               onStopSiren={stopSiren}
+              onTestSound={handleTestSound}
               onOpenServerConfig={() => setIsServerModalOpen(true)}
-              onOpenRecall={() => setIsRecallModalOpen(true)}
-              completedCount={completedOrders.length}
+              onLogout={handleLogout}
+              sortOrder={sortOrder}
+              onToggleSortOrder={() => setSortOrder(prev => prev === 'FILO' ? 'FIFO' : 'FILO')}
             />
 
             {/* Swiggy / Zomato Flashing New Order Banner */}
             <NewOrderAlertBanner 
-              newOrders={pending}
+              newOrders={pendingOnly}
               onAcceptAll={handleAcceptAllPending}
               onMute={stopSiren}
             />
 
-            {/* Tablet Multi-Column Layout */}
-            {isTablet ? (
-              <View style={styles.tabletColumns}>
-                {/* Column 1: New Orders */}
-                <View style={[styles.column, { borderTopColor: COLORS.pending }]}>
-                  <View style={styles.columnHeader}>
-                    <Text style={[styles.columnTitle, { color: COLORS.pending }]}>New Orders</Text>
-                    <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{pending.length}</Text></View>
+            {/* Streamlined Rush Hour Tabs: NEW & HISTORY */}
+            <View style={styles.tabBar}>
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'NEW' && styles.tabItemActive]}
+                onPress={() => setActiveTab('NEW')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.tabContentRow}>
+                  <Text style={[styles.tabLabel, activeTab === 'NEW' && styles.tabLabelActive]}>
+                    New Orders
+                  </Text>
+                  <View style={[styles.tabBadge, activeTab === 'NEW' ? styles.tabBadgeActive : styles.tabBadgeInactive]}>
+                    <Text style={styles.tabBadgeText}>{newOrders.length}</Text>
                   </View>
-                  <ScrollView style={styles.columnScroll}>
-                    {pending.map(o => (
-                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-                    ))}
-                  </ScrollView>
                 </View>
+              </TouchableOpacity>
 
-                {/* Column 2: In Kitchen */}
-                <View style={[styles.column, { borderTopColor: COLORS.prep }]}>
-                  <View style={styles.columnHeader}>
-                    <Text style={[styles.columnTitle, { color: COLORS.prep }]}>Cooking / In Kitchen</Text>
-                    <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{preparing.length}</Text></View>
+              <TouchableOpacity
+                style={[styles.tabItem, activeTab === 'HISTORY' && styles.tabItemActive]}
+                onPress={() => setActiveTab('HISTORY')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.tabContentRow}>
+                  <Text style={[styles.tabLabel, activeTab === 'HISTORY' && styles.tabLabelActive]}>
+                    History
+                  </Text>
+                  <View style={[styles.tabBadge, activeTab === 'HISTORY' ? styles.tabBadgeHistoryActive : styles.tabBadgeInactive]}>
+                    <Text style={styles.tabBadgeText}>{historyOrders.length}</Text>
                   </View>
-                  <ScrollView style={styles.columnScroll}>
-                    {preparing.map(o => (
-                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-                    ))}
-                  </ScrollView>
                 </View>
+              </TouchableOpacity>
+            </View>
 
-                {/* Column 3: Ready */}
-                <View style={[styles.column, { borderTopColor: COLORS.ready }]}>
-                  <View style={styles.columnHeader}>
-                    <Text style={[styles.columnTitle, { color: COLORS.ready }]}>Ready to Serve</Text>
-                    <View style={styles.columnBadge}><Text style={styles.badgeNumber}>{ready.length}</Text></View>
-                  </View>
-                  <ScrollView style={styles.columnScroll}>
-                    {ready.map(o => (
-                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-                    ))}
-                  </ScrollView>
+            {/* Order Cards List */}
+            <ScrollView style={styles.orderScroll} contentContainerStyle={styles.orderScrollContent}>
+              {sortedOrders.map(o => (
+                <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
+              ))}
+
+              {sortedOrders.length === 0 && (
+                <View style={styles.emptyState}>
+                  <Ionicons 
+                    name={activeTab === 'NEW' ? "restaurant-outline" : "checkmark-done-circle-outline"} 
+                    size={52} 
+                    color={COLORS.textMuted} 
+                  />
+                  <Text style={styles.emptyTitle}>
+                    {activeTab === 'NEW' ? 'No Active Kitchen Orders' : 'No Order History Yet'}
+                  </Text>
+                  <Text style={styles.emptySub}>
+                    {activeTab === 'NEW' 
+                      ? 'New orders from cashier or customer app will arrive here.' 
+                      : 'Orders marked as food ready will appear in this history tab.'}
+                  </Text>
                 </View>
-              </View>
-            ) : (
-              /* Mobile Phone Layout with Segmented Top Bar */
-              <View style={{ flex: 1 }}>
-                <View style={styles.tabBar}>
-                  <TouchableOpacity 
-                    style={[styles.tabItem, activeTab === 'PENDING' && { backgroundColor: COLORS.pending }]}
-                    onPress={() => setActiveTab('PENDING')}
-                  >
-                    <Text style={[styles.tabText, activeTab === 'PENDING' && styles.tabTextActive]}>
-                      New ({pending.length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[styles.tabItem, activeTab === 'PREPARING' && { backgroundColor: COLORS.prep }]}
-                    onPress={() => setActiveTab('PREPARING')}
-                  >
-                    <Text style={[styles.tabText, activeTab === 'PREPARING' && { color: '#000', fontWeight: '800' }]}>
-                      Cooking ({preparing.length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[styles.tabItem, activeTab === 'READY' && { backgroundColor: COLORS.ready }]}
-                    onPress={() => setActiveTab('READY')}
-                  >
-                    <Text style={[styles.tabText, activeTab === 'READY' && styles.tabTextActive]}>
-                      Ready ({ready.length})
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView style={styles.mobileList} contentContainerStyle={{ padding: 12 }}>
-                  {displayOrders.length === 0 ? (
-                    <View style={styles.emptyState}>
-                      <Ionicons name="restaurant-outline" size={38} color={COLORS.textMuted} />
-                      <Text style={styles.emptyText}>No orders in this stage.</Text>
-                    </View>
-                  ) : (
-                    displayOrders.map(o => (
-                      <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-                    ))
-                  )}
-                </ScrollView>
-              </View>
-            )}
+              )}
+            </ScrollView>
           </View>
         )}
 
-        {/* Server Config Modal */}
+        {/* Server Endpoint Config Modal */}
         <ServerConfigModal 
-          visible={isServerModalOpen} 
-          onClose={() => setIsServerModalOpen(false)}
+          visible={isServerModalOpen}
+          isOpen={isServerModalOpen} 
+          onClose={() => setIsServerModalOpen(false)} 
           onSaved={() => fetchOrders(false)}
-        />
-
-        {/* Recall / Bumped Orders Modal */}
-        <RecallModal 
-          visible={isRecallModalOpen}
-          onClose={() => setIsRecallModalOpen(false)}
-          completedOrders={completedOrders}
-          onRecall={handleRecallOrder}
+          onChanged={() => fetchOrders(false)}
         />
       </SafeAreaView>
     </SafeAreaProvider>
@@ -318,84 +364,83 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bgPrimary,
   },
-  tabletColumns: {
-    flex: 1,
-    flexDirection: 'row',
-    padding: 12,
-    gap: 12,
-  },
-  column: {
-    flex: 1,
-    backgroundColor: COLORS.bgSecondary,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    borderTopWidth: 4,
-    overflow: 'hidden',
-  },
-  columnHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderSubtle,
-  },
-  columnTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  columnBadge: {
-    backgroundColor: COLORS.bgCard,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  badgeNumber: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  columnScroll: {
-    padding: 10,
-  },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: COLORS.bgSecondary,
-    padding: 6,
-    marginHorizontal: 12,
-    marginTop: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
-    gap: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderSubtle,
   },
   tabItem: {
     flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  tabText: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  tabTextActive: {
-    color: '#FFF',
-    fontWeight: '800',
-  },
-  mobileList: {
-    flex: 1,
-  },
-  emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
-    gap: 10,
+    paddingVertical: 14,
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
   },
-  emptyText: {
-    color: COLORS.textMuted,
+  tabItemActive: {
+    borderBottomColor: COLORS.brand,
+    backgroundColor: 'rgba(252, 128, 25, 0.05)',
+  },
+  tabContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tabLabel: {
     fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+  },
+  tabLabelActive: {
+    color: COLORS.textPrimary,
+    fontWeight: '800',
+  },
+  tabBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  tabBadgeActive: {
+    backgroundColor: COLORS.brand,
+  },
+  tabBadgeHistoryActive: {
+    backgroundColor: COLORS.ready,
+  },
+  tabBadgeInactive: {
+    backgroundColor: COLORS.bgCard,
+    borderWidth: 1,
+    borderColor: COLORS.borderSubtle,
+  },
+  tabBadgeText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  orderScroll: {
+    flex: 1,
+  },
+  orderScrollContent: {
+    padding: 12,
+    paddingBottom: 28,
+  },
+  emptyState: {
+    paddingVertical: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyTitle: {
+    marginTop: 14,
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  emptySub: {
+    marginTop: 6,
+    color: COLORS.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

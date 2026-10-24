@@ -1,63 +1,76 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 import { getOrderTypeDetails, formatTime } from '../utils/formatters';
 
-export function RecallModal({ visible, onClose, completedOrders, onRecall }) {
+export function RecallModal({ visible, isOpen, onClose, completedOrders = [], onRecall }) {
+  const isModalVisible = Boolean(visible !== undefined ? visible : isOpen);
+
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Recently Completed Orders</Text>
-              <Text style={styles.subtitle}>Restore accidentally bumped tickets back to Ready</Text>
-            </View>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={COLORS.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.scroll}>
-            {completedOrders.length === 0 ? (
-              <View style={styles.empty}>
-                <Text style={styles.emptyText}>No completed orders in this session.</Text>
+    <Modal 
+      visible={isModalVisible} 
+      transparent 
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.overlay} 
+        activeOpacity={1} 
+        onPress={onClose}
+      >
+        <TouchableWithoutFeedback>
+          <View style={styles.sheet}>
+            <View style={styles.header}>
+              <View>
+                <Text style={styles.title}>Recently Completed Orders</Text>
+                <Text style={styles.subtitle}>Restore accidentally bumped tickets back to Ready</Text>
               </View>
-            ) : (
-              completedOrders.map(order => {
-                const orderType = getOrderTypeDetails(order);
-                return (
-                  <View key={order.order_id} style={styles.itemCard}>
-                    <View style={styles.row}>
-                      <Text style={styles.orderId}>#{order.branch_order_id || order.order_id}</Text>
-                      <Text style={styles.time}>{formatTime(order.created_at)}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.scroll}>
+              {completedOrders.length === 0 ? (
+                <View style={styles.empty}>
+                  <Text style={styles.emptyText}>No completed orders in this session.</Text>
+                </View>
+              ) : (
+                completedOrders.map(order => {
+                  const orderType = getOrderTypeDetails(order);
+                  return (
+                    <View key={order.order_id} style={styles.itemCard}>
+                      <View style={styles.row}>
+                        <Text style={styles.orderId}>#{order.branch_order_id || order.order_id}</Text>
+                        <Text style={styles.time}>{formatTime(order.created_at)}</Text>
+                      </View>
+
+                      <View style={styles.row}>
+                        <Text style={[styles.type, { color: orderType.color }]}>{orderType.label}</Text>
+                        <Text style={styles.itemCount}>{(order.items || []).length} items</Text>
+                      </View>
+
+                      <Text style={styles.itemSummary} numberOfLines={2}>
+                        {(order.items || []).map(i => `${i.quantity}x ${i.name}`).join(', ')}
+                      </Text>
+
+                      <TouchableOpacity 
+                        style={styles.recallBtn}
+                        onPress={() => onRecall(order.order_id)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="arrow-undo-outline" size={14} color={COLORS.blue} style={{ marginRight: 4 }} />
+                        <Text style={styles.recallBtnText}>Recall Order</Text>
+                      </TouchableOpacity>
                     </View>
-
-                    <View style={styles.row}>
-                      <Text style={[styles.type, { color: orderType.color }]}>{orderType.label}</Text>
-                      <Text style={styles.itemCount}>{(order.items || []).length} items</Text>
-                    </View>
-
-                    <Text style={styles.itemSummary} numberOfLines={2}>
-                      {(order.items || []).map(i => `${i.quantity}x ${i.name}`).join(', ')}
-                    </Text>
-
-                    <TouchableOpacity 
-                      style={styles.recallBtn}
-                      onPress={() => onRecall(order.order_id)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="arrow-undo-outline" size={14} color={COLORS.blue} style={{ marginRight: 4 }} />
-                      <Text style={styles.recallBtnText}>Recall Order</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })
-            )}
-          </ScrollView>
-        </View>
-      </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </TouchableWithoutFeedback>
+      </TouchableOpacity>
     </Modal>
   );
 }
@@ -80,6 +93,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  closeBtn: {
+    padding: 4,
   },
   title: {
     fontSize: 16,

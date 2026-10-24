@@ -7,6 +7,7 @@ export const BACKEND_ENDPOINTS = [
 
 let activeBaseUrl = 'http://dev-api.dataudipi.com';
 let activeRestaurantId = 1;
+let activeRestaurant = null;
 let authToken = null;
 
 export const getActiveBaseUrl = () => activeBaseUrl;
@@ -16,7 +17,15 @@ export const setActiveBaseUrl = (url) => {
 
 export const getActiveRestaurantId = () => activeRestaurantId;
 export const setActiveRestaurantId = (id) => {
-  activeRestaurantId = id;
+  activeRestaurantId = Number(id);
+};
+
+export const getActiveRestaurant = () => activeRestaurant;
+export const setActiveRestaurant = (rest) => {
+  activeRestaurant = rest;
+  if (rest && rest.id) {
+    activeRestaurantId = Number(rest.id);
+  }
 };
 
 export const setAuthToken = (token) => { authToken = token; };
@@ -53,8 +62,18 @@ async function request(path, options = {}, timeoutMs = 8000) {
 }
 
 export const kdsApi = {
-  getLiveOrders: async () => {
-    return await request(`/api/v1/orders/live?restaurant_id=${activeRestaurantId}`);
+  getLiveOrders: async (restaurantId) => {
+    const rId = restaurantId || activeRestaurantId;
+    return await request(`/api/v1/orders/live?restaurant_id=${rId}`);
+  },
+
+  getRestaurants: async () => {
+    try {
+      return await request('/api/v1/restaurants');
+    } catch (e) {
+      // Fallback to public endpoint if restricted
+      return await request('/api/v1/public/restaurants');
+    }
   },
 
   updateOrderStatus: async (orderId, status) => {
@@ -64,7 +83,7 @@ export const kdsApi = {
     });
   },
 
-  login: async (email, password, role = 'HOTEL_ADMIN') => {
+  login: async (email, password, role = 'SUPER_ADMIN') => {
     const data = await request('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password, role }),
@@ -78,3 +97,6 @@ export const kdsApi = {
     return data;
   },
 };
+
+// Alias used by web components (src/App.jsx, LoginModal.jsx, etc.)
+export const kdsService = kdsApi;
