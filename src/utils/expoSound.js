@@ -1,5 +1,6 @@
 let audioPlayer = null;
 let isAudioConfigured = false;
+let autoStopTimer = null;
 
 export async function initAudioMode() {
   if (isAudioConfigured) return;
@@ -45,8 +46,17 @@ function getOrCreatePlayer() {
   }
 }
 
-export async function playLoudAlarmSound() {
+/**
+ * Plays the loud alarm siren for exactly durationMs (default: 3000ms / 3 seconds).
+ * After 3 seconds, it automatically stops so it never rings endlessly.
+ */
+export async function playLoudAlarmSound(durationMs = 3000) {
   try {
+    if (autoStopTimer) {
+      clearTimeout(autoStopTimer);
+      autoStopTimer = null;
+    }
+
     await initAudioMode();
     const player = getOrCreatePlayer();
     if (player) {
@@ -54,6 +64,13 @@ export async function playLoudAlarmSound() {
       player.loop = true;
       player.seekTo(0).catch(() => {});
       player.play();
+
+      // Automatically cut off sound after exactly durationMs (3 seconds)
+      if (durationMs > 0) {
+        autoStopTimer = setTimeout(() => {
+          stopLoudAlarmSound();
+        }, durationMs);
+      }
     }
   } catch (err) {
     console.warn('[KDS Sound] Play error:', err.message);
@@ -62,6 +79,10 @@ export async function playLoudAlarmSound() {
 
 export function stopLoudAlarmSound() {
   try {
+    if (autoStopTimer) {
+      clearTimeout(autoStopTimer);
+      autoStopTimer = null;
+    }
     if (audioPlayer) {
       audioPlayer.pause();
     }

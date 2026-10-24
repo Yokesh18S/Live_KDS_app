@@ -52,6 +52,7 @@ export default function App() {
   // Prevents background polling race condition from reverting button state!
   const optimisticStatusRef = useRef(new Map());
   const inFlightStatusUpdatesRef = useRef(new Set());
+  const sirenTimeoutRef = useRef(null);
 
   // Initialize native audio mode on boot
   useEffect(() => {
@@ -136,11 +137,9 @@ export default function App() {
         !knownOrderIdsRef.current.has(o.order_id)
       );
 
-      // Trigger siren sound and vibration alert on newly arrived orders
+      // Trigger siren sound and vibration alert on newly arrived orders for exactly 3 seconds
       if (!initialLoadRef.current && newPending.length > 0) {
-        setIsRinging(true);
-        Vibration.vibrate([600, 200, 600, 200, 600], true);
-        playLoudAlarmSound();
+        triggerSirenAlert(3000);
       }
 
       mergedList.forEach(o => knownOrderIdsRef.current.add(o.order_id));
@@ -165,19 +164,37 @@ export default function App() {
     }
   }, [currentUser, selectedRestaurant, fetchOrders]);
 
-  const stopSiren = () => {
+  const stopSiren = useCallback(() => {
+    if (sirenTimeoutRef.current) {
+      clearTimeout(sirenTimeoutRef.current);
+      sirenTimeoutRef.current = null;
+    }
     setIsRinging(false);
     Vibration.cancel();
     stopLoudAlarmSound();
-  };
+  }, []);
+
+  // Sounds siren for exactly 3 seconds for each order
+  const triggerSirenAlert = useCallback((durationMs = 3000) => {
+    if (sirenTimeoutRef.current) {
+      clearTimeout(sirenTimeoutRef.current);
+    }
+    setIsRinging(true);
+    // Vibrate 500ms on, 200ms off for 3 seconds total (no infinite loop)
+    Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500], false);
+    playLoudAlarmSound(durationMs);
+
+    sirenTimeoutRef.current = setTimeout(() => {
+      setIsRinging(false);
+      Vibration.cancel();
+    }, durationMs);
+  }, []);
 
   const handleTestSound = () => {
     if (isRinging) {
       stopSiren();
     } else {
-      setIsRinging(true);
-      Vibration.vibrate([600, 200, 600, 200, 600], true);
-      playLoudAlarmSound();
+      triggerSirenAlert(3000);
     }
   };
 
