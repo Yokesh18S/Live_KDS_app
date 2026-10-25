@@ -131,7 +131,17 @@ export function App() {
         return o;
       });
 
-      setOrders(mergedList);
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const todayCutoffMs = startOfToday.getTime();
+      const todayOrders = mergedList.filter(o => {
+        if (!o.created_at) return true;
+        let dStr = typeof o.created_at === 'string' ? o.created_at : String(o.created_at);
+        if (!dStr.includes('Z') && !dStr.includes('+')) dStr = dStr.replace(' ', 'T') + 'Z';
+        const t = new Date(dStr).getTime();
+        return isNaN(t) || t >= todayCutoffMs;
+      });
+      setOrders(todayOrders);
     } catch (err) {
       console.warn('Orders fetch error:', err);
     } finally {

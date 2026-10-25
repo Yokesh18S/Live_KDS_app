@@ -137,19 +137,22 @@ export default function App() {
         return o;
       });
 
-      // Filter to keep active shift orders (created within the last 18 hours or active)
-      // This immediately filters out ancient stale test tickets from days/weeks ago!
-      const shiftCutoff = now - 18 * 60 * 60 * 1000;
-      const shiftOrders = mergedList.filter(o => {
+      // Strictly filter to TODAY'S orders (starting at 00:00:00 today)
+      // Completely eliminates all yesterday's KOTs and old history!
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const todayCutoffMs = startOfToday.getTime();
+
+      const todayOrders = mergedList.filter(o => {
         if (!o.created_at) return true;
         let dStr = typeof o.created_at === 'string' ? o.created_at : String(o.created_at);
         if (!dStr.includes('Z') && !dStr.includes('+')) dStr = dStr.replace(' ', 'T') + 'Z';
         const t = new Date(dStr).getTime();
-        return isNaN(t) || t >= shiftCutoff;
+        return isNaN(t) || t >= todayCutoffMs;
       });
 
-      // Check for newly arrived PENDING orders
-      const newPending = shiftOrders.filter(o => 
+      // Check for newly arrived PENDING orders from today
+      const newPending = todayOrders.filter(o => 
         (o.status || 'PENDING').toUpperCase() === 'PENDING' &&
         !knownOrderIdsRef.current.has(o.order_id)
       );
@@ -159,10 +162,10 @@ export default function App() {
         triggerSirenAlert(3000);
       }
 
-      shiftOrders.forEach(o => knownOrderIdsRef.current.add(o.order_id));
+      todayOrders.forEach(o => knownOrderIdsRef.current.add(o.order_id));
       initialLoadRef.current = false;
 
-      setOrders(shiftOrders);
+      setOrders(todayOrders);
     } catch (err) {
       console.warn('[KDS Fetch Orders Error]:', err.message);
     } finally {
@@ -297,17 +300,17 @@ export default function App() {
     setOrders([]);
   };
 
-  // 1. New Orders: PENDING & PREPARING
+  // 1. New Orders: Strictly TODAY'S PENDING & PREPARING
   const newOrders = orders.filter(o => {
     const s = (o.status || 'PENDING').toUpperCase();
     return s === 'PENDING' || s === 'PREPARING';
   });
 
-  // 2. History Orders: READY & SERVED
+  // 2. History Orders: Strictly TODAY'S READY & SERVED (Limited to recent 20 so it never clutters or lags)
   const historyOrders = orders.filter(o => {
     const s = (o.status || '').toUpperCase();
     return s === 'READY' || s === 'SERVED';
-  });
+  }).slice(0, 20);
 
   // Pending strictly for audio / alert banner
   const pendingOnly = orders.filter(o => (o.status || 'PENDING').toUpperCase() === 'PENDING');
