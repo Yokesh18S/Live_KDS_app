@@ -4,6 +4,8 @@ import {
   View, 
   Text, 
   ScrollView, 
+  FlatList,
+  RefreshControl,
   TouchableOpacity, 
   Vibration, 
   Dimensions,
@@ -53,6 +55,7 @@ export default function App() {
   const optimisticStatusRef = useRef(new Map());
   const inFlightStatusUpdatesRef = useRef(new Set());
   const sirenTimeoutRef = useRef(null);
+  const isFetchingRef = useRef(false);
 
   // Initialize native audio mode on boot
   useEffect(() => {
@@ -93,11 +96,14 @@ export default function App() {
 
   const isTablet = windowWidth >= 768;
 
-  // Fetch Live Orders for currently selected hotel
+  // Fetch Live Orders for currently selected hotel with instant response & shift filter
   const fetchOrders = useCallback(async (isSilent = false) => {
     if (!getAuthToken() || !selectedRestaurant) {
       return;
     }
+    // Prevent overlapping network calls
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
 
     if (!isSilent) setIsRefreshing(true);
     try {
@@ -131,8 +137,19 @@ export default function App() {
         return o;
       });
 
+      // Filter to keep active shift orders (created within the last 18 hours or active)
+      // This immediately filters out ancient stale test tickets from days/weeks ago!
+      const shiftCutoff = now - 18 * 60 * 60 * 1000;
+      const shiftOrders = mergedList.filter(o => {
+        if (!o.created_at) return true;
+        let dStr = typeof o.created_at === 'string' ? o.created_at : String(o.created_at);
+        if (!dStr.includes('Z') && !dStr.includes('+')) dStr = dStr.replace(' ', 'T') + 'Z';
+        const t = new Date(dStr).getTime();
+        return isNaN(t) || t >= shiftCutoff;
+      });
+
       // Check for newly arrived PENDING orders
-      const newPending = mergedList.filter(o => 
+      const newPending = shiftOrders.filter(o => 
         (o.status || 'PENDING').toUpperCase() === 'PENDING' &&
         !knownOrderIdsRef.current.has(o.order_id)
       );
@@ -142,24 +159,25 @@ export default function App() {
         triggerSirenAlert(3000);
       }
 
-      mergedList.forEach(o => knownOrderIdsRef.current.add(o.order_id));
+      shiftOrders.forEach(o => knownOrderIdsRef.current.add(o.order_id));
       initialLoadRef.current = false;
 
-      setOrders(mergedList);
+      setOrders(shiftOrders);
     } catch (err) {
       console.warn('[KDS Fetch Orders Error]:', err.message);
     } finally {
       setIsRefreshing(false);
+      isFetchingRef.current = false;
     }
   }, [selectedRestaurant]);
 
-  // Polling loop (every 5 seconds) when hotel is selected
+  // Ultra-Fast Live Polling Loop (every 2 seconds instead of 5s) for immediate real-time response
   useEffect(() => {
     if (currentUser && selectedRestaurant) {
       fetchOrders();
       const interval = setInterval(() => {
         fetchOrders(true);
-      }, 5000);
+      }, 2000);
       return () => clearInterval(interval);
     }
   }, [currentUser, selectedRestaurant, fetchOrders]);
@@ -407,18 +425,29 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* High Performance Smooth Order Cards Scroll */}
-            <ScrollView 
+            {/* High Performance Virtualized FlatList for Instant Startup & Zero Lag */}
+            <FlatList 
               style={styles.orderScroll} 
               contentContainerStyle={styles.orderScrollContent}
+              data={sortedOrders}
+              keyExtractor={(item) => String(item.order_id)}
+              renderItem={({ item }) => (
+                <KDSTicketCard order={item} onUpdateStatus={handleUpdateStatus} />
+              )}
+              initialNumToRender={6}
+              maxToRenderPerBatch={6}
+              windowSize={5}
               removeClippedSubviews={true}
               keyboardShouldPersistTaps="handled"
-            >
-              {sortedOrders.map(o => (
-                <KDSTicketCard key={o.order_id} order={o} onUpdateStatus={handleUpdateStatus} />
-              ))}
-
-              {sortedOrders.length === 0 && (
+              refreshControl={
+                <RefreshControl 
+                  refreshing={isRefreshing} 
+                  onRefresh={() => fetchOrders(false)} 
+                  tintColor={COLORS.brand} 
+                  colors={[COLORS.brand]} 
+                />
+              }
+              ListEmptyComponent={
                 <View style={styles.emptyState}>
                   <Ionicons 
                     name={activeTab === 'NEW' ? "restaurant-outline" : "checkmark-done-circle-outline"} 
@@ -434,8 +463,8 @@ export default function App() {
                       : 'Orders marked as food ready will appear in this history tab.'}
                   </Text>
                 </View>
-              )}
-            </ScrollView>
+              }
+            />
           </View>
         )}
 
